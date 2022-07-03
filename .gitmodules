@@ -1,0 +1,3 @@
+[submodule "vendor/hudhook"]
+	path = vendor/hudhook
+	url = https://github.com/veeenu/hudhook.git

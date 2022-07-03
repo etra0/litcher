@@ -27,113 +27,9 @@ use hudhook::hooks::dx11::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui_dx11::imgui::{Condition, Window};
 
 mod util;
+mod definitions;
 
-#[repr(C, packed)]
-#[derive(LazyRe, Copy, Clone)]
-#[lazy_re]
-struct Position {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-
-impl From<[f32; 3]> for Position {
-    fn from(arr: [f32; 3]) -> Self {
-        Position {
-            x: arr[0],
-            y: arr[1],
-            z: arr[2],
-        }
-    }
-}
-
-impl From<Position> for [f32; 3] {
-    fn from(pos: Position) -> Self {
-        [pos.x, pos.y, pos.z]
-    }
-}
-
-#[repr(C, packed)]
-#[derive(LazyRe)]
-#[lazy_re]
-struct Light {
-    color: Color,
-    radius: f32,
-    brightness: f32,
-}
-
-#[repr(C, packed)]
-#[derive(LazyRe)]
-#[lazy_re]
-struct LightEntity {
-    vt: usize,
-
-    #[offset = 0xA0]
-    pos: Position,
-
-    #[offset = 0x130]
-    light: Light,
-
-    #[offset = 0x164]
-    is_enabled: bool,
-
-    #[offset = 0x170]
-    shadow_casting_mode: u32,
-    shadow_fade_distance: u32,
-    shadow_fade_range: f32,
-}
-
-struct LightFunctions {
-    ctor_caller: unsafe extern "C" fn(
-        memory_pool: usize,
-        _unused: usize,
-        marker: u8,
-        light: *mut LightEntity,
-    ) -> *mut LightEntity,
-    flag_setter: unsafe extern "C" fn(light: *mut LightEntity, world: usize),
-    render_update: unsafe extern "C" fn(light: *mut LightEntity, world: usize),
-}
-
-impl LightFunctions {
-    pub fn new(base_addr: usize) -> Self {
-        Self {
-            render_update: unsafe { std::mem::transmute(base_addr + 0x2a0f50) },
-            ctor_caller: unsafe { std::mem::transmute(base_addr + 0x03c400) },
-            flag_setter: unsafe { std::mem::transmute(base_addr + 0x02a06f0) },
-        }
-    }
-}
-
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-struct Color {
-    red: u8,
-    green: u8,
-    blue: u8,
-    alpha: u8,
-}
-
-impl From<[f32; 4]> for Color {
-    fn from(col: [f32; 4]) -> Self {
-        Self {
-            red: (col[0] * 255.0) as u8,
-            green: (col[1] * 255.0) as u8,
-            blue: (col[2] * 255.0) as u8,
-            alpha: (col[3] * 255.0) as u8,
-        }
-    }
-}
-
-impl From<Color> for [f32; 4] {
-    fn from(col: Color) -> Self {
-        [
-            (col.red as f32) / 255.0,
-            (col.green as f32) / 255.0,
-            (col.blue as f32) / 255.0,
-            (col.alpha as f32) / 255.0,
-        ]
-    }
-}
+use definitions::*;
 
 struct Context {
     memory_pool: usize,
@@ -172,22 +68,18 @@ impl Context {
 
     // TODO: fix the position stuff.
     unsafe fn spawn_new_light(&mut self) {
-        let light = unsafe {
-            let light =
-                (self.light_functions.ctor_caller)(self.memory_pool, 0, 1, std::ptr::null_mut());
-            (*light).pos = Position {
-                x: -403.67,
-                y: -253.33,
-                z: 8.0,
-            };
-            (*light).light.brightness = 1000.0;
-            (*light).light.radius = 180.0;
-
-            (self.light_functions.flag_setter)(light, self.world);
-            (*light).shadow_casting_mode = 2;
-
-            light
+        let light =
+            (self.light_functions.ctor_caller)(self.memory_pool, 0, 1, std::ptr::null_mut());
+        (*light).pos = Position {
+            x: -403.67,
+            y: -253.33,
+            z: 8.0,
         };
+        (*light).light.brightness = 1000.0;
+        (*light).light.radius = 180.0;
+
+        (self.light_functions.flag_setter)(light, self.world);
+        (*light).shadow_casting_mode = 2;
 
         self.lights.push(light as usize);
     }
