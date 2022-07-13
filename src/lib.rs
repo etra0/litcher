@@ -23,7 +23,8 @@ use lazy_re::{lazy_re, LazyRe};
 use log::*;
 use simplelog::*;
 
-use hudhook::hooks::dx11::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::dx11::ImguiDX11Hooks;
 use imgui_dx11::imgui::{Condition, Window};
 
 mod util;
@@ -38,7 +39,6 @@ struct Context {
     proc_info: ProcessInfo,
     light_functions: LightFunctions,
     show: bool,
-    display_key: util::KeyState
 }
 
 
@@ -51,7 +51,7 @@ impl Context {
         let memory_pool: usize =
             unsafe { *((proc_info.region.start_address + 0x2c46878) as *const usize) };
         // TODO: Check how to do this!!
-        let world = 0x000001AF5F8F2590;
+        let world = 0x0000027A8C835560;
         let lights = Vec::new();
         let light_functions = LightFunctions::new(proc_info.region.start_address);
 
@@ -62,7 +62,6 @@ impl Context {
             light_functions,
             proc_info,
             show: false,
-            display_key: util::KeyState::new(VK_F4 as _)
         }
     }
 
@@ -109,16 +108,19 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
                 .no_horizontal_scroll(false)
                 .build();
 
+            ui.checkbox("is enabled", &mut light.is_enabled);
+
             light.pos = position.into();
             light.light.brightness = brightness;
             light.light.radius = radius;
         });
+
 }
 
 impl ImguiRenderLoop for Context {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
 
-        if flags.focused && !ui.io().want_capture_keyboard && self.display_key.keyup() {
+        if flags.focused && !ui.io().want_capture_keyboard && ui.is_key_index_pressed_no_repeat(VK_F4 as _) {
             self.show = !self.show;
         }
 
@@ -145,6 +147,12 @@ impl ImguiRenderLoop for Context {
             ui.set_mouse_cursor(None);
         }
     }
+
+    fn should_block_messages(&self, io: &imgui::Io) -> bool {
+        _ = io;
+        false
+    }
+
 }
 
-hudhook::hudhook!(Context::new().into_hook());
+hudhook::hudhook!(Context::new().into_hook::<ImguiDX11Hooks>());

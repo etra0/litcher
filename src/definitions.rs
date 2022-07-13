@@ -1,7 +1,7 @@
-use lazy_re::{lazy_re, LazyRe};
+use lazy_re::lazy_re;
 
 #[repr(C, packed)]
-#[derive(LazyRe, Copy, Clone)]
+#[derive(Copy, Clone)]
 #[lazy_re]
 pub struct Position {
     pub x: f32,
@@ -26,7 +26,6 @@ impl From<Position> for [f32; 3] {
 }
 
 #[repr(C, packed)]
-#[derive(LazyRe)]
 #[lazy_re]
 pub struct Light {
     pub color: Color,
@@ -35,21 +34,20 @@ pub struct Light {
 }
 
 #[repr(C, packed)]
-#[derive(LazyRe)]
 #[lazy_re]
 pub struct LightEntity {
     vt: usize,
 
-    #[offset = 0xA0]
+    #[lazy_re(offset = 0xA0)]
     pub pos: Position,
 
-    #[offset = 0x130]
+    #[lazy_re(offset = 0x130)]
     pub light: Light,
 
-    #[offset = 0x164]
+    #[lazy_re(offset = 0x164)]
     pub is_enabled: bool,
 
-    #[offset = 0x170]
+    #[lazy_re(offset = 0x170)]
     pub shadow_casting_mode: u32,
     pub shadow_fade_distance: u32,
     pub shadow_fade_range: f32,

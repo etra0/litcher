@@ -257,7 +257,7 @@ dependencies = [
 [[package]]
 name = "lazy-re"
 version = "0.1.0"
-source = "git+https://github.com/etra0/lazy-re#0c8f20c469ff0d8328f552e63768826ca2d8cd4f"
+source = "git+https://github.com/etra0/lazy-re#cdb137ebb59bd2ce23efe944e91a377f52ce0bb9"
 dependencies = [
  "quote",
  "syn",
@@ -435,9 +435,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.12.0"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7709cef83f0c1f58f666e746a08b21e0085f7440fa6a29cc194d68aac97a4225"
+checksum = "ac8b1a9b2518dc799a2271eff1688707eb315f0d4697aa6b0871369ca4c4da55"
 
 [[package]]
 name = "parking_lot"
