@@ -1,4 +1,5 @@
 use lazy_re::{lazy_re, LazyRe};
+use crate::pointer::*;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -33,6 +34,9 @@ unsafe impl Send for LightEntity {}
 #[lazy_re]
 #[repr(C, packed)]
 pub struct LightEntityVT {
+    // 44 * 0x8
+    #[lazy_re(offset = 352)]
+    pub get_parent: unsafe extern "C" fn(light: &LightEntity) -> &'static CLayer,
     // set_flags also triggers a re-render of the light.
     // 48 * 0x8
     #[lazy_re(offset = 384)]
@@ -41,11 +45,44 @@ pub struct LightEntityVT {
 
 #[lazy_re]
 #[repr(C, packed)]
-pub struct LightEntity {
-    pub vt: &'static LightEntityVT,
+pub struct CLayer {
+    #[lazy_re(offset = 0x68)]
+    pub world: usize
+}
 
-    #[lazy_re(offset = 0xA0)]
+// Dummy for the Entity.
+pub struct EmptyVT;
+
+#[repr(C, packed)]
+pub struct Entity<VT: 'static> {
+    pub vt: &'static VT,
+
+    __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
+    pub parent: usize,
+
+    __pad01: [u8; 0xA0 - (0x30 + std::mem::size_of::<usize>())],
     pub pos: Position,
+}
+
+#[repr(C, packed)]
+pub struct ScriptedEntity<VT: 'static> {
+    pub vt: &'static VT,
+
+    __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
+    // In the C4RPlayer this is the DynamicLayer
+    pub ptr00: &'static ScriptedEntity<VT>,
+    // CCustomCamera
+    pub ptr01: &'static ScriptedEntity<VT>,
+
+    __pad01: [u8; 0xA0 - (0x30 + std::mem::size_of::<usize>()*2)],
+    pub pos: Position,
+
+}
+
+#[lazy_re]
+#[repr(C, packed)]
+pub struct LightEntity {
+    pub entity: Entity<LightEntityVT>,
 
     #[lazy_re(offset = 0x130)]
     pub light: Light,
@@ -69,8 +106,13 @@ pub struct LightEntity {
 unsafe impl Sync for MemoryPool {}
 unsafe impl Send for MemoryPool {}
 
+#[lazy_re]
+#[repr(C, packed)]
 pub struct MemoryPool {
     pub vt: *const MemoryPoolVT,
+
+    #[lazy_re(offset = 0x110)]
+    pub light: &'static LightEntity,
 }
 
 #[lazy_re]
@@ -80,11 +122,46 @@ pub struct MemoryPoolVT {
     pub spawn_entity: unsafe extern "C" fn(memory_pool: &MemoryPool) -> &'static mut LightEntity,
 }
 
+pub type MemoryPoolFunc = unsafe extern "C" fn(memory_pool: &MemoryPool, unused: usize, marker: u8, light: usize) -> &'static mut LightEntity;
+
+
 // Since these are game constants, we can make sure that at least those pointers will live as long
 // as the game is running.
 pub struct MainMemoryPools {
     pub spotlight: &'static mut MemoryPool,
     pub pointlight: &'static mut MemoryPool,
+}
+
+// TODO: rethink if this is the best way to abstract this, since it could lead to confusion.
+pub struct CR4Player(Pointer<ScriptedEntity<EmptyVT>>);
+
+impl CR4Player {
+
+    pub fn new(player: Pointer<ScriptedEntity<EmptyVT>>) -> Self {
+        Self(player)
+    }
+
+    pub fn get_world(&mut self) -> usize {
+        let layer = unsafe { self.0.read().unwrap().ptr00 };
+        let world = layer.ptr00 as *const _ as usize;
+
+        world
+    }
+
+    pub fn get_camera(&mut self) -> &'static ScriptedEntity<EmptyVT> {
+        let camera = unsafe { self.0.read().unwrap().ptr01 };
+
+        camera
+    }
+
+    pub fn should_update(&self) -> bool {
+        self.0.should_update
+    }
+
+    pub fn updated(&mut self) {
+        self.0.should_update = false;
+        self.0.last_value = None;
+    }
 }
 
 

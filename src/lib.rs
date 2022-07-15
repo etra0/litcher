@@ -23,20 +23,37 @@ use lazy_re::{lazy_re, LazyRe};
 use log::*;
 use simplelog::*;
 
-use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use hudhook::hooks::dx11::ImguiDX11Hooks;
+use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui_dx11::imgui::{Condition, Window};
 
 mod definitions;
+mod pointer;
+
 use definitions::*;
+use pointer::*;
 
 struct Context {
     memory_pools: MainMemoryPools,
-    world: usize,
     lights: Vec<LightKindContainer>,
     show: bool,
+    player: CR4Player,
+    memory_pool_func: MemoryPoolFunc,
 }
 
+
+unsafe fn deref_pointer(addr: usize, offsets: &[usize]) -> Option<usize> {
+    let mut current_addr = std::ptr::read((addr) as *const usize);
+    for offset in offsets {
+        if current_addr == 0 {
+            return None;
+        }
+
+        current_addr = std::ptr::read((current_addr + offset) as *const usize);
+    }
+
+    Some(current_addr)
+}
 
 impl Context {
     fn new() -> Self {
@@ -45,19 +62,31 @@ impl Context {
         let proc_info = ProcessInfo::new(None).unwrap();
 
         let memory_pools = MainMemoryPools {
-            pointlight: unsafe { std::mem::transmute(*((proc_info.region.start_address + 0x2c46878) as *const usize)) },
-            spotlight: unsafe { std::mem::transmute(*((proc_info.region.start_address  + 0x2c46900) as *const usize)) },
+            pointlight: unsafe {
+                std::mem::transmute(*((proc_info.region.start_address + 0x2c46878) as *const usize))
+            },
+            spotlight: unsafe {
+                std::mem::transmute(*((proc_info.region.start_address + 0x2c46900) as *const usize))
+            },
         };
 
-        // TODO: Check how to do this!!
-        let world = 0x000001D8815C78A0;
+        // base pointer:
+        // [$process + 2a51558]
+        // [0x230, 0x88, 0x30, 0x30]
+        //          ^ CR4Player
+        //
+        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(proc_info.region.start_address + 0x2a51558, vec![0x230, 0x88]);
+
         let lights = Vec::new();
+
+        let memory_pool_func: MemoryPoolFunc = unsafe { std::mem::transmute(proc_info.region.start_address + 0x03c400) };
 
         Self {
             memory_pools,
-            world,
             lights,
             show: false,
+            player: CR4Player::new(player),
+            memory_pool_func,
         }
     }
 
@@ -65,22 +94,24 @@ impl Context {
     unsafe fn spawn_new_light(&mut self, kind: LightKind) {
         // TODO: Ugh, find a way to just do one match.
         let light = match kind {
-            LightKind::SpotLight => 
-                ((*self.memory_pools.spotlight.vt).spawn_entity)(self.memory_pools.spotlight),
-            LightKind::PointLight => 
-                ((*self.memory_pools.pointlight.vt).spawn_entity)(self.memory_pools.pointlight),
+            LightKind::SpotLight => {
+                (self.memory_pool_func)(self.memory_pools.spotlight, 0, 1, 0)
+            }
+            LightKind::PointLight => {
+                (self.memory_pool_func)(self.memory_pools.pointlight, 0, 1, 0)
+            }
         };
 
-        light.pos = Position::default();
+        let camera = self.player.get_camera();
+        light.entity.pos = camera.pos;
         light.light.brightness = 1000.0;
         light.light.radius = 180.0;
         light.inner_angle = 0.1;
         light.outer_angle = 180.0;
         light.softness = 1.;
 
-        (light.vt.set_flags)(light, self.world);
+        (light.entity.vt.set_flags)(light, self.player.get_world());
         light.shadow_casting_mode = 2;
-
 
         match kind {
             LightKind::SpotLight => self.lights.push(LightKindContainer::SpotLight(light)),
@@ -135,27 +166,36 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
                 .range(0.1, 10000.0)
                 .build(&ui, &mut softness);
 
-            let mut position: [f32; 3] = light.pos.into();
+            let mut position: [f32; 3] = light.entity.pos.into();
             imgui::InputFloat3::new(&ui, "Position", &mut position)
                 .no_horizontal_scroll(false)
                 .build();
 
             ui.checkbox("is enabled", &mut light.is_enabled);
 
-            light.pos = position.into();
+            light.entity.pos = position.into();
             light.light.brightness = brightness;
             light.light.radius = radius;
             light.inner_angle = inner_angle;
             light.outer_angle = outer_angle;
             light.softness = softness;
         });
-
 }
 
 impl ImguiRenderLoop for Context {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
+        // Force a read every render to avoid crashes.
+        _ = self.player.get_world();
 
-        if flags.focused && !ui.io().want_capture_keyboard && ui.is_key_index_pressed_no_repeat(VK_F4 as _) {
+        if self.player.should_update() {
+            self.lights.clear();
+            self.player.updated();
+        }
+
+        if flags.focused
+            && !ui.io().want_capture_keyboard
+            && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
+        {
             self.show = !self.show;
         }
 
@@ -180,11 +220,11 @@ impl ImguiRenderLoop for Context {
             for (i, light) in self.lights.iter_mut().enumerate() {
                 let light = match light {
                     LightKindContainer::SpotLight(l) => l,
-                    LightKindContainer::PointLight(l) => l
-                    };
+                    LightKindContainer::PointLight(l) => l,
+                };
                 render_window_per_light(ui, light, i);
                 unsafe {
-                    (light.vt.set_flags)(light, self.world);
+                    (light.entity.vt.set_flags)(light, self.player.get_world());
                 }
             }
         } else {
@@ -196,7 +236,6 @@ impl ImguiRenderLoop for Context {
         _ = io;
         false
     }
-
 }
 
 hudhook::hudhook!(Context::new().into_hook::<ImguiDX11Hooks>());
