@@ -102,7 +102,7 @@ impl Context {
             }
         };
 
-        let camera = self.player.get_camera();
+        let camera = self.player.get_camera().unwrap();
         light.entity.pos = camera.pos;
         light.light.brightness = 1000.0;
         light.light.radius = 180.0;
@@ -110,7 +110,7 @@ impl Context {
         light.outer_angle = 180.0;
         light.softness = 1.;
 
-        (light.entity.vt.set_flags)(light, self.player.get_world());
+        (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
         light.shadow_casting_mode = 2;
 
         match kind {
@@ -185,7 +185,7 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
 impl ImguiRenderLoop for Context {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
         // Force a read every render to avoid crashes.
-        _ = self.player.get_world();
+        // _ = self.player.get_world();
 
         if self.player.should_update() {
             self.lights.clear();
@@ -224,7 +224,7 @@ impl ImguiRenderLoop for Context {
                 };
                 render_window_per_light(ui, light, i);
                 unsafe {
-                    (light.entity.vt.set_flags)(light, self.player.get_world());
+                    (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
                 }
             }
         } else {

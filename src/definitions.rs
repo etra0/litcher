@@ -70,9 +70,9 @@ pub struct ScriptedEntity<VT: 'static> {
 
     __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
     // In the C4RPlayer this is the DynamicLayer
-    pub ptr00: &'static ScriptedEntity<VT>,
+    pub ptr00: Option<&'static ScriptedEntity<VT>>,
     // CCustomCamera
-    pub ptr01: &'static ScriptedEntity<VT>,
+    pub ptr01: Option<&'static ScriptedEntity<VT>>,
 
     __pad01: [u8; 0xA0 - (0x30 + std::mem::size_of::<usize>()*2)],
     pub pos: Position,
@@ -141,21 +141,21 @@ impl CR4Player {
         Self(player)
     }
 
-    pub fn get_world(&mut self) -> usize {
-        let layer = unsafe { self.0.read().unwrap().ptr00 };
-        let world = layer.ptr00 as *const _ as usize;
+    pub fn get_world(&mut self) -> Option<usize> {
+        let layer = unsafe { self.0.read()?.ptr00? };
+        let world = layer.ptr00? as *const _ as usize;
 
-        world
+        Some(world)
     }
 
-    pub fn get_camera(&mut self) -> &'static ScriptedEntity<EmptyVT> {
-        let camera = unsafe { self.0.read().unwrap().ptr01 };
+    pub fn get_camera(&mut self) -> Option<&'static ScriptedEntity<EmptyVT>> {
+        let camera = unsafe { self.0.read()?.ptr01? };
 
-        camera
+        Some(camera)
     }
 
     pub fn should_update(&self) -> bool {
-        self.0.should_update
+        self.0.should_update || self.0.last_value.is_none()
     }
 
     pub fn updated(&mut self) {
