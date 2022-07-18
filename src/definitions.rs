@@ -11,16 +11,45 @@ pub struct Position {
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
+pub struct Rotations {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub _unused: f32,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
 pub struct Light {
     pub color: Color,
     pub radius: f32,
     pub brightness: f32,
 }
 
-// Since we manage our own memory, it's just easier to upgrade to static lifetimes.
 pub enum LightKindContainer {
     SpotLight(&'static mut LightEntity),
     PointLight(&'static mut LightEntity),
+}
+
+impl LightKindContainer {
+    pub fn disable_light(&mut self) {
+        match self {
+            Self::SpotLight(l) => { l.is_enabled = false },
+            Self::PointLight(l) => { l.is_enabled = false },
+        }
+    }
+
+    pub fn downcast(&self) -> &LightEntity {
+        match self {
+            Self::SpotLight(l) | Self::PointLight(l) => l,
+        }
+    }
+
+    pub fn downcast_mut(&mut self) -> &mut LightEntity {
+        match self {
+            Self::SpotLight(l) | Self::PointLight(l) => l,
+        }
+    }
 }
 
 pub enum LightKind {
@@ -60,9 +89,14 @@ pub struct Entity<VT: 'static> {
     __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
     pub parent: usize,
 
-    __pad01: [u8; 0xA0 - (0x30 + std::mem::size_of::<usize>())],
+    __pad01: [u8; 0x54 - (0x30 + std::mem::size_of::<usize>())],
+    pub flags: u32,
+
+    __pad02: [u8; 0x90 - (0x54 + std::mem::size_of::<u32>())],
+    pub rotations: Rotations,
     pub pos: Position,
 }
+
 
 #[repr(C, packed)]
 pub struct ScriptedEntity<VT: 'static> {
@@ -74,7 +108,8 @@ pub struct ScriptedEntity<VT: 'static> {
     // CCustomCamera
     pub ptr01: Option<&'static ScriptedEntity<VT>>,
 
-    __pad01: [u8; 0xA0 - (0x30 + std::mem::size_of::<usize>()*2)],
+    __pad01: [u8; 0x90 - (0x30 + std::mem::size_of::<usize>()*2)],
+    pub rotations: Rotations,
     pub pos: Position,
 
 }
@@ -103,6 +138,12 @@ pub struct LightEntity {
 
 }
 
+impl LightEntity {
+    pub fn should_get_deleted(&self) -> bool {
+        return (self.entity.flags & 0x22) != 0
+    }
+}
+
 unsafe impl Sync for MemoryPool {}
 unsafe impl Send for MemoryPool {}
 
@@ -128,8 +169,8 @@ pub type MemoryPoolFunc = unsafe extern "C" fn(memory_pool: &MemoryPool, unused:
 // Since these are game constants, we can make sure that at least those pointers will live as long
 // as the game is running.
 pub struct MainMemoryPools {
-    pub spotlight: &'static mut MemoryPool,
-    pub pointlight: &'static mut MemoryPool,
+    pub spotlight: Pointer<MemoryPool>,
+    pub pointlight: Pointer<MemoryPool>,
 }
 
 // TODO: rethink if this is the best way to abstract this, since it could lead to confusion.

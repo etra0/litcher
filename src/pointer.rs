@@ -19,7 +19,7 @@ impl<T: 'static> Pointer<T> {
         }
     }
 
-    pub unsafe fn read(&mut self) -> Option<&'static T> {
+    pub unsafe fn read(&mut self) -> Option<&'static mut T> {
         let mut current_addr = std::ptr::read((self.base_addr) as *const usize);
         for offset in self.offsets.iter() {
             if current_addr == 0 {

@@ -1,3 +1,7 @@
+//! Some things that are useful for debugging:
+//! The render_proxy function is at [$process + 02a0f50]. It receives two arguments, the light
+//! pointer and the world. It's useful to hook into it to steal the world pointer.
+//! Offset of the CR4Player Memory Pool: [$process + 2d56848]
 #![feature(once_cell)]
 #![allow(unused_imports)]
 
@@ -62,12 +66,8 @@ impl Context {
         let proc_info = ProcessInfo::new(None).unwrap();
 
         let memory_pools = MainMemoryPools {
-            pointlight: unsafe {
-                std::mem::transmute(*((proc_info.region.start_address + 0x2c46878) as *const usize))
-            },
-            spotlight: unsafe {
-                std::mem::transmute(*((proc_info.region.start_address + 0x2c46900) as *const usize))
-            },
+            pointlight: Pointer::new(proc_info.region.start_address + 0x2c46878, Vec::new()),
+            spotlight: Pointer::new(proc_info.region.start_address + 0x2c46900, Vec::new()),
         };
 
         // base pointer:
@@ -75,7 +75,10 @@ impl Context {
         // [0x230, 0x88, 0x30, 0x30]
         //          ^ CR4Player
         //
-        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(proc_info.region.start_address + 0x2a51558, vec![0x230, 0x88]);
+        // Another option:
+        // [$process + 0x2c5dd38]
+        // [0x1A8, 0x40] <= CR4Player
+        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(proc_info.region.start_address + 0x2c5dd38, vec![0x1A8, 0x40]);
 
         let lights = Vec::new();
 
@@ -95,15 +98,17 @@ impl Context {
         // TODO: Ugh, find a way to just do one match.
         let light = match kind {
             LightKind::SpotLight => {
-                (self.memory_pool_func)(self.memory_pools.spotlight, 0, 1, 0)
+                (self.memory_pool_func)(self.memory_pools.spotlight.read().unwrap(), 0, 1, 0)
             }
             LightKind::PointLight => {
-                (self.memory_pool_func)(self.memory_pools.pointlight, 0, 1, 0)
+                (self.memory_pool_func)(self.memory_pools.pointlight.read().unwrap(), 0, 1, 0)
             }
         };
 
         let camera = self.player.get_camera().unwrap();
         light.entity.pos = camera.pos;
+        light.entity.rotations = camera.rotations;
+
         light.light.brightness = 1000.0;
         light.light.radius = 180.0;
         light.inner_angle = 0.1;
@@ -112,6 +117,12 @@ impl Context {
 
         (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
         light.shadow_casting_mode = 2;
+        light.is_enabled = true;
+
+        println!("new light: {:p}", light);
+        unsafe {
+            (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
+        }
 
         match kind {
             LightKind::SpotLight => self.lights.push(LightKindContainer::SpotLight(light)),
@@ -185,18 +196,42 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
 impl ImguiRenderLoop for Context {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
         // Force a read every render to avoid crashes.
-        // _ = self.player.get_world();
+        let _world = self.player.get_world();
+        if _world.is_none() {
+            self.lights.clear();
+            self.player.updated();
 
+            println!("World is changed or none");
+        }
+
+        // TODO: Revisit this logic, it might be not needed anymore.
         if self.player.should_update() {
+            println!("Player was updated");
             self.lights.clear();
             self.player.updated();
         }
+
 
         if flags.focused
             && !ui.io().want_capture_keyboard
             && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
         {
             self.show = !self.show;
+        }
+
+        // TODO: Remove this
+        if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
+            // Before we do the clear, let's just deactivate all the current lights.
+            for light in self.lights.iter_mut() {
+                match light {
+                    LightKindContainer::SpotLight(l) | LightKindContainer::PointLight(l) => {
+                        l.is_enabled = false;
+                        unsafe { (l.entity.vt.set_flags)(l, self.player.get_world().unwrap()) };
+                    },
+                }
+            }
+            self.lights.clear();
+            self.player.updated();
         }
 
         if self.show {
@@ -217,11 +252,15 @@ impl ImguiRenderLoop for Context {
                     }
                 });
 
+
+            // ptr00 is invalid when the light is no longer being used (i.e. it's GC'ed)
+            self.lights.retain(|x: &definitions::LightKindContainer| {
+                let ptr = x.downcast();
+                !ptr.should_get_deleted()
+            });
+
             for (i, light) in self.lights.iter_mut().enumerate() {
-                let light = match light {
-                    LightKindContainer::SpotLight(l) => l,
-                    LightKindContainer::PointLight(l) => l,
-                };
+                let light = light.downcast_mut();
                 render_window_per_light(ui, light, i);
                 unsafe {
                     (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
