@@ -23,7 +23,7 @@ hudhook = { path = "./vendor/hudhook/hudhook/" }
 imgui-dx11 = { path = "./vendor/hudhook/imgui-dx11/" }
 imgui-dx12 = { path = "./vendor/hudhook/imgui-dx12/" }
 imgui = "0.8.2"
-lazy-re = { git = "https://github.com/etra0/lazy-re" }
+lazy-re = "0.1.1"
 
 [lib]
 crate-type = ["cdylib"]

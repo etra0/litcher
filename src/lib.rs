@@ -111,13 +111,15 @@ impl Context {
 
         light.light.brightness = 1000.0;
         light.light.radius = 180.0;
-        light.inner_angle = 0.1;
-        light.outer_angle = 180.0;
+        light.inner_angle = 10.0;
+        light.outer_angle = 40.0;
         light.softness = 1.;
 
         (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
-        light.shadow_casting_mode = 2;
+        light.shadow_casting_mode = 1;
         light.is_enabled = true;
+
+        light.entity.some_values = camera.some_values.clone();
 
         println!("new light: {:p}", light);
         unsafe {
@@ -174,7 +176,7 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
                 .build(&ui, &mut outer_angle);
 
             imgui::Slider::new("Softness", f32::MIN, f32::MAX)
-                .range(0.1, 10000.0)
+                .range(0.1, 100.0)
                 .build(&ui, &mut softness);
 
             let mut position: [f32; 3] = light.entity.pos.into();

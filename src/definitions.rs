@@ -82,33 +82,41 @@ pub struct CLayer {
 // Dummy for the Entity.
 pub struct EmptyVT;
 
+#[lazy_re]
 #[repr(C, packed)]
 pub struct Entity<VT: 'static> {
     pub vt: &'static VT,
 
-    __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
+    #[lazy_re(offset = 0x30)]
     pub parent: usize,
 
-    __pad01: [u8; 0x54 - (0x30 + std::mem::size_of::<usize>())],
+    #[lazy_re(offset = 0x54)]
     pub flags: u32,
 
-    __pad02: [u8; 0x90 - (0x54 + std::mem::size_of::<u32>())],
+    #[lazy_re(offset = 0x6C)]
+    pub some_values: [u8; 0x90 - 0x6C],
+
+    // #[lazy_re(offset = 0x90)]
     pub rotations: Rotations,
     pub pos: Position,
 }
 
 
+#[lazy_re]
 #[repr(C, packed)]
 pub struct ScriptedEntity<VT: 'static> {
     pub vt: &'static VT,
 
-    __pad00: [u8; 0x30 - std::mem::size_of::<usize>()],
     // In the C4RPlayer this is the DynamicLayer
-    pub ptr00: Option<&'static ScriptedEntity<VT>>,
+    #[lazy_re(offset = 0x30)]
+    pub ptr00: Option<&'static ScriptedEntity<EmptyVT>>,
     // CCustomCamera
-    pub ptr01: Option<&'static ScriptedEntity<VT>>,
+    pub ptr01: Option<&'static ScriptedEntity<EmptyVT>>,
 
-    __pad01: [u8; 0x90 - (0x30 + std::mem::size_of::<usize>()*2)],
+    #[lazy_re(offset = 0x6C)]
+    pub some_values: [u8; 0x90 - 0x6C],
+
+    // #[lazy_re(offset = 0x90)]
     pub rotations: Rotations,
     pub pos: Position,
 
