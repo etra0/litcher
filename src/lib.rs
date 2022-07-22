@@ -39,24 +39,11 @@ use pointer::*;
 
 struct Context {
     memory_pools: MainMemoryPools,
-    lights: Vec<LightKindContainer>,
+    lights: Vec<LightWrapper>,
     show: bool,
     player: CR4Player,
     memory_pool_func: MemoryPoolFunc,
-}
-
-
-unsafe fn deref_pointer(addr: usize, offsets: &[usize]) -> Option<usize> {
-    let mut current_addr = std::ptr::read((addr) as *const usize);
-    for offset in offsets {
-        if current_addr == 0 {
-            return None;
-        }
-
-        current_addr = std::ptr::read((current_addr + offset) as *const usize);
-    }
-
-    Some(current_addr)
+    base_addr: usize,
 }
 
 impl Context {
@@ -70,19 +57,18 @@ impl Context {
             spotlight: Pointer::new(proc_info.region.start_address + 0x2c46900, Vec::new()),
         };
 
-        // base pointer:
-        // [$process + 2a51558]
-        // [0x230, 0x88, 0x30, 0x30]
-        //          ^ CR4Player
-        //
         // Another option:
         // [$process + 0x2c5dd38]
         // [0x1A8, 0x40] <= CR4Player
-        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(proc_info.region.start_address + 0x2c5dd38, vec![0x1A8, 0x40]);
+        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(
+            proc_info.region.start_address + 0x2c5dd38,
+            vec![0x1A8, 0x40],
+        );
 
         let lights = Vec::new();
 
-        let memory_pool_func: MemoryPoolFunc = unsafe { std::mem::transmute(proc_info.region.start_address + 0x03c400) };
+        let memory_pool_func: MemoryPoolFunc =
+            unsafe { std::mem::transmute(proc_info.region.start_address + 0x03c400) };
 
         Self {
             memory_pools,
@@ -90,13 +76,23 @@ impl Context {
             show: false,
             player: CR4Player::new(player),
             memory_pool_func,
+            base_addr: proc_info.region.start_address,
+        }
+    }
+
+    fn create_functor_constant(&self) -> impl Fn(f32) -> f32 {
+        let base_addr = self.base_addr;
+        move |v| {
+            let weird_func: extern "C" fn(f32) -> f32 =
+                unsafe { std::mem::transmute(base_addr + 0x0e7cb60) };
+            return (weird_func)(v * 0.0055555 * std::f32::consts::PI);
         }
     }
 
     // TODO: fix the position stuff.
     unsafe fn spawn_new_light(&mut self, kind: LightKind) {
         // TODO: Ugh, find a way to just do one match.
-        let light = match kind {
+        let light_ptr = match kind {
             LightKind::SpotLight => {
                 (self.memory_pool_func)(self.memory_pools.spotlight.read().unwrap(), 0, 1, 0)
             }
@@ -105,31 +101,27 @@ impl Context {
             }
         };
 
-        let camera = self.player.get_camera().unwrap();
-        light.entity.pos = camera.pos;
-        light.entity.rotations = camera.rotations;
+        let camera = self.player.get_camera2().unwrap();
+        let calc_const = self.create_functor_constant();
+        light_ptr.entity.pos = camera.pos;
+        light_ptr.entity.rotations = camera.get_rot(&calc_const);
 
-        light.light.brightness = 1000.0;
-        light.light.radius = 180.0;
-        light.inner_angle = 10.0;
-        light.outer_angle = 40.0;
-        light.softness = 1.;
+        light_ptr.light.brightness = 1000.0;
+        light_ptr.light.radius = 180.0;
+        light_ptr.inner_angle = 10.0;
+        light_ptr.outer_angle = 40.0;
+        light_ptr.softness = 1.;
 
-        (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
-        light.shadow_casting_mode = 1;
-        light.is_enabled = true;
+        (light_ptr.entity.vt.set_flags)(light_ptr, self.player.get_world().unwrap());
+        light_ptr.shadow_casting_mode = 1;
+        light_ptr.is_enabled = true;
 
-        light.entity.some_values = camera.some_values.clone();
-
-        println!("new light: {:p}", light);
+        println!("new light: {:p}", light_ptr);
         unsafe {
-            (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
+            (light_ptr.entity.vt.set_flags)(light_ptr, self.player.get_world().unwrap());
         }
 
-        match kind {
-            LightKind::SpotLight => self.lights.push(LightKindContainer::SpotLight(light)),
-            LightKind::PointLight => self.lights.push(LightKindContainer::PointLight(light)),
-        };
+        self.lights.push(LightWrapper::new(kind, light_ptr));
     }
 }
 
@@ -144,10 +136,16 @@ impl Default for Position {
     }
 }
 
-fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEntity, ix: usize) {
+fn render_window_per_light(
+    ui: &mut imgui_dx11::imgui::Ui,
+    light_wrapper: &mut LightWrapper,
+    ix: usize,
+) {
     Window::new(format!("Light {}", ix))
         .size([300.0, 210.0], Condition::FirstUseEver)
         .build(ui, || {
+            let mut light = &mut light_wrapper.light;
+
             let mut colors: [f32; 4] = light.light.color.into();
             let cp = imgui::ColorPicker::new("color picker", &mut colors);
             if cp.build(&ui) {
@@ -160,6 +158,8 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
             let mut inner_angle = light.inner_angle;
             let mut outer_angle = light.outer_angle;
             let mut softness = light.softness;
+            let mut casting_mode = light.shadow_casting_mode as i32;
+
             imgui::Slider::new("Brightness", f32::MIN, f32::MAX)
                 .range(0.1, 10000.0)
                 .build(&ui, &mut brightness);
@@ -184,7 +184,11 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
                 .no_horizontal_scroll(false)
                 .build();
 
-            ui.checkbox("is enabled", &mut light.is_enabled);
+            imgui::InputInt::new(&ui, "Shadow casting mode", &mut casting_mode)
+                .build();
+
+            ui.checkbox("Is enabled", &mut light.is_enabled);
+            ui.checkbox("Attach to camera", &mut light_wrapper.attach_camera);
 
             light.entity.pos = position.into();
             light.light.brightness = brightness;
@@ -192,6 +196,7 @@ fn render_window_per_light(ui: &mut imgui_dx11::imgui::Ui, light: &mut LightEnti
             light.inner_angle = inner_angle;
             light.outer_angle = outer_angle;
             light.softness = softness;
+            light.shadow_casting_mode = casting_mode as _;
         });
 }
 
@@ -213,7 +218,6 @@ impl ImguiRenderLoop for Context {
             self.player.updated();
         }
 
-
         if flags.focused
             && !ui.io().want_capture_keyboard
             && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
@@ -224,13 +228,14 @@ impl ImguiRenderLoop for Context {
         // TODO: Remove this
         if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
             // Before we do the clear, let's just deactivate all the current lights.
-            for light in self.lights.iter_mut() {
-                match light {
-                    LightKindContainer::SpotLight(l) | LightKindContainer::PointLight(l) => {
-                        l.is_enabled = false;
-                        unsafe { (l.entity.vt.set_flags)(l, self.player.get_world().unwrap()) };
-                    },
-                }
+            for light_wrapper in self.lights.iter_mut() {
+                light_wrapper.light.is_enabled = false;
+                unsafe {
+                    (light_wrapper.light.entity.vt.set_flags)(
+                        light_wrapper.light,
+                        self.player.get_world().unwrap(),
+                    )
+                };
             }
             self.lights.clear();
             self.player.updated();
@@ -254,18 +259,28 @@ impl ImguiRenderLoop for Context {
                     }
                 });
 
-
             // ptr00 is invalid when the light is no longer being used (i.e. it's GC'ed)
-            self.lights.retain(|x: &definitions::LightKindContainer| {
-                let ptr = x.downcast();
+            self.lights.retain(|x: &LightWrapper| {
+                let ptr = &x.light;
                 !ptr.should_get_deleted()
             });
 
-            for (i, light) in self.lights.iter_mut().enumerate() {
-                let light = light.downcast_mut();
-                render_window_per_light(ui, light, i);
+            // TODO: Fix this stupid shit.
+            let calc_const = self.create_functor_constant();
+            for (i, light_wrapper) in self.lights.iter_mut().enumerate() {
+                render_window_per_light(ui, light_wrapper, i);
+                // TODO: Maybe rethink if I actually want this *here*
+                if light_wrapper.attach_camera {
+                    let camera_dir = self.player.get_camera2().unwrap();
+
+                    light_wrapper.light.entity.pos = camera_dir.pos;
+                    light_wrapper.light.entity.rotations = camera_dir.get_rot(&calc_const);
+                }
+
+                let light = &mut light_wrapper.light;
+
                 unsafe {
-                    (light.entity.vt.set_flags)(light, self.player.get_world().unwrap());
+                    (light.entity.vt.set_flags)(*light, self.player.get_world().unwrap());
                 }
             }
         } else {

@@ -1,5 +1,5 @@
-use lazy_re::{lazy_re, LazyRe};
 use crate::pointer::*;
+use lazy_re::{lazy_re, LazyRe};
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -26,28 +26,35 @@ pub struct Light {
     pub brightness: f32,
 }
 
-pub enum LightKindContainer {
-    SpotLight(&'static mut LightEntity),
-    PointLight(&'static mut LightEntity),
+unsafe impl Sync for LightEntity {}
+unsafe impl Send for LightEntity {}
+
+unsafe impl Send for LightWrapper {}
+unsafe impl Sync for LightWrapper {}
+
+#[lazy_re]
+#[repr(C, packed)]
+pub struct CR4CameraDirector {
+    #[lazy_re(offset = 0x70)]
+    pub pos: Position,
+
+    pub unk00: f32,
+
+    // Guessing that this is the Z rotation, I don't actually know, neither do I care.
+    pub z_rot: f32,
+    pub y_rot: f32,
+    pub x_rot: f32,
 }
 
-impl LightKindContainer {
-    pub fn disable_light(&mut self) {
-        match self {
-            Self::SpotLight(l) => { l.is_enabled = false },
-            Self::PointLight(l) => { l.is_enabled = false },
-        }
-    }
-
-    pub fn downcast(&self) -> &LightEntity {
-        match self {
-            Self::SpotLight(l) | Self::PointLight(l) => l,
-        }
-    }
-
-    pub fn downcast_mut(&mut self) -> &mut LightEntity {
-        match self {
-            Self::SpotLight(l) | Self::PointLight(l) => l,
+impl CR4CameraDirector {
+    // Ugh, i guess that by design we have to pass this function around. It kinda sucks but it is
+    // what we have right now.
+    pub fn get_rot(&self, calc_const: &impl Fn(f32) -> f32) -> Rotations {
+        let y = calc_const(self.x_rot) * calc_const(self.y_rot);
+        Rotations {
+            x: (self.x_rot.to_radians() - std::f32::consts::PI).sin(),
+            z: (-self.y_rot.to_radians() + std::f32::consts::PI).sin(),
+            y, _unused: 0.0
         }
     }
 }
@@ -57,8 +64,23 @@ pub enum LightKind {
     PointLight,
 }
 
-unsafe impl Sync for LightEntity {}
-unsafe impl Send for LightEntity {}
+pub struct LightWrapper {
+    pub light: &'static mut LightEntity,
+
+    // our settings
+    pub attach_camera: bool,
+    pub kind: LightKind,
+}
+
+impl LightWrapper {
+    pub fn new(kind: LightKind, light: &'static mut LightEntity) -> Self {
+        Self {
+            light,
+            attach_camera: false,
+            kind
+        }
+    }
+}
 
 #[lazy_re]
 #[repr(C, packed)]
@@ -76,7 +98,7 @@ pub struct LightEntityVT {
 #[repr(C, packed)]
 pub struct CLayer {
     #[lazy_re(offset = 0x68)]
-    pub world: usize
+    pub world: usize,
 }
 
 // Dummy for the Entity.
@@ -93,14 +115,12 @@ pub struct Entity<VT: 'static> {
     #[lazy_re(offset = 0x54)]
     pub flags: u32,
 
-    #[lazy_re(offset = 0x6C)]
-    pub some_values: [u8; 0x90 - 0x6C],
-
-    // #[lazy_re(offset = 0x90)]
+    #[lazy_re(offset = 0x80)]
     pub rotations: Rotations,
+
+    #[lazy_re(offset = 0xA0)]
     pub pos: Position,
 }
-
 
 #[lazy_re]
 #[repr(C, packed)]
@@ -113,13 +133,11 @@ pub struct ScriptedEntity<VT: 'static> {
     // CCustomCamera
     pub ptr01: Option<&'static ScriptedEntity<EmptyVT>>,
 
-    #[lazy_re(offset = 0x6C)]
-    pub some_values: [u8; 0x90 - 0x6C],
-
-    // #[lazy_re(offset = 0x90)]
+    #[lazy_re(offset = 0x80)]
     pub rotations: Rotations,
-    pub pos: Position,
 
+    #[lazy_re(offset = 0xA0)]
+    pub pos: Position,
 }
 
 #[lazy_re]
@@ -143,12 +161,11 @@ pub struct LightEntity {
     pub inner_angle: f32,
     pub outer_angle: f32,
     pub softness: f32,
-
 }
 
 impl LightEntity {
     pub fn should_get_deleted(&self) -> bool {
-        return (self.entity.flags & 0x22) != 0
+        return (self.entity.flags & 0x22) != 0;
     }
 }
 
@@ -171,8 +188,12 @@ pub struct MemoryPoolVT {
     pub spawn_entity: unsafe extern "C" fn(memory_pool: &MemoryPool) -> &'static mut LightEntity,
 }
 
-pub type MemoryPoolFunc = unsafe extern "C" fn(memory_pool: &MemoryPool, unused: usize, marker: u8, light: usize) -> &'static mut LightEntity;
-
+pub type MemoryPoolFunc = unsafe extern "C" fn(
+    memory_pool: &MemoryPool,
+    unused: usize,
+    marker: u8,
+    light: usize,
+) -> &'static mut LightEntity;
 
 // Since these are game constants, we can make sure that at least those pointers will live as long
 // as the game is running.
@@ -185,7 +206,6 @@ pub struct MainMemoryPools {
 pub struct CR4Player(Pointer<ScriptedEntity<EmptyVT>>);
 
 impl CR4Player {
-
     pub fn new(player: Pointer<ScriptedEntity<EmptyVT>>) -> Self {
         Self(player)
     }
@@ -203,6 +223,16 @@ impl CR4Player {
         Some(camera)
     }
 
+    // TODO: Remove this!
+    pub fn get_camera2(&mut self) -> Option<&'static CR4CameraDirector> {
+        let layer = unsafe { self.0.read()?.ptr00? };
+        let world = layer.ptr01?;
+
+        let camera_dir: &'static CR4CameraDirector = unsafe { std::mem::transmute(world) };
+
+        Some(camera_dir)
+    }
+
     pub fn should_update(&self) -> bool {
         self.0.should_update || self.0.last_value.is_none()
     }
@@ -212,7 +242,6 @@ impl CR4Player {
         self.0.last_value = None;
     }
 }
-
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -260,4 +289,3 @@ impl From<Position> for [f32; 3] {
         [pos.x, pos.y, pos.z]
     }
 }
-
