@@ -15,12 +15,7 @@ pub struct Position {
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct Rotation {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub _unused: f32,
-}
+pub struct RotationMatrix([f32; 4*3]);
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
@@ -44,23 +39,8 @@ pub struct CR4CameraDirector {
 
     pub unk00: f32,
 
-    // Guessing that this is the Z rotation, I don't actually know, neither do I care.
-    pub z_rot: f32,
-    pub y_rot: f32,
-    pub x_rot: f32,
-}
-
-impl CR4CameraDirector {
-    // Ugh, i guess that by design we have to pass this function around. It kinda sucks but it is
-    // what we have right now.
-    pub fn get_rot(&self, calc_const: &impl Fn(f32) -> f32) -> Rotation {
-        let y = calc_const(self.x_rot) * calc_const(self.y_rot);
-        Rotation {
-            x: (self.x_rot.to_radians() - std::f32::consts::PI).sin(),
-            z: (-self.y_rot.to_radians() + std::f32::consts::PI).sin(),
-            y, _unused: 0.0
-        }
-    }
+    #[lazy_re(offset = 0x1A0)]
+    pub rot_matrix: RotationMatrix,
 }
 
 pub enum LightType {
@@ -84,7 +64,7 @@ impl LightContainer {
         }
     }
 
-    pub fn set_pos_rot(&mut self, pos: Position, rot: Rotation) {
+    pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
         match &mut self.light {
             LightType::PointLight(pl) => {
                 pl.set_pos_rot(pos, rot);
@@ -140,8 +120,8 @@ pub struct Entity<VT: 'static> {
     #[lazy_re(offset = 0x54)]
     pub flags: u32,
 
-    #[lazy_re(offset = 0x80)]
-    pub rotations: Rotation,
+    #[lazy_re(offset = 0x70)]
+    pub rot_matrix: RotationMatrix,
 
     #[lazy_re(offset = 0xA0)]
     pub pos: Position,
@@ -158,8 +138,8 @@ pub struct ScriptedEntity<VT: 'static> {
     // CCustomCamera
     pub ptr01: Option<&'static ScriptedEntity<EmptyVT>>,
 
-    #[lazy_re(offset = 0x80)]
-    pub rotations: Rotation,
+    #[lazy_re(offset = 0x70)]
+    pub rot_matrix: RotationMatrix,
 
     #[lazy_re(offset = 0xA0)]
     pub pos: Position,
@@ -194,11 +174,11 @@ pub struct SpotLight {
 }
 
 impl SpotLight {
-    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: Rotation, world: usize) -> &'static mut Self {
+    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: RotationMatrix, world: usize) -> &'static mut Self {
         let light_ptr: &'static mut Self = unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
 
         light_ptr.light.entity.pos = position;
-        light_ptr.light.entity.rotations = rot;
+        light_ptr.light.entity.rot_matrix = rot;
 
         light_ptr.light.light_settings.brightness = 1000.0;
         light_ptr.light.light_settings.radius = 5.0;
@@ -215,9 +195,9 @@ impl SpotLight {
         light_ptr
     }
 
-    pub fn set_pos_rot(&mut self, pos: Position, rot: Rotation) {
+    pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
         self.light.entity.pos = pos;
-        self.light.entity.rotations = rot;
+        self.light.entity.rot_matrix = rot;
     }
 
     pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, attach_camera: &mut bool, ix: usize) {
@@ -300,11 +280,11 @@ pub struct PointLight {
 }
 
 impl PointLight {
-    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: Rotation, world: usize) -> &'static mut Self {
+    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: RotationMatrix, world: usize) -> &'static mut Self {
         let light_ptr: &'static mut Self = unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
 
         light_ptr.light.entity.pos = position;
-        light_ptr.light.entity.rotations = rot;
+        light_ptr.light.entity.rot_matrix = rot;
 
         light_ptr.light.light_settings.brightness = 1000.0;
         light_ptr.light.light_settings.radius = 5.0;
@@ -322,9 +302,9 @@ impl PointLight {
         light_ptr
     }
 
-    pub fn set_pos_rot(&mut self, pos: Position, rot: Rotation) {
+    pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
         self.light.entity.pos = pos;
-        _ = rot;
+        self.light.entity.rot_matrix = rot;
     }
 
     pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, attach_camera: &mut bool, ix: usize) {
@@ -370,7 +350,7 @@ impl PointLight {
                 light.light_settings.radius = radius;
                 light.shadow_casting_mode = casting_mode as _;
                 self.cache_static_shadows = cache_static_shadows as _;
-                self.dynamic_shadow_face_mask = dynamic_shadow_face_mask as _;
+                self.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8)*0x3F;
             });
 
     }

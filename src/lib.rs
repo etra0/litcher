@@ -49,7 +49,7 @@ struct Context {
 impl Context {
     fn new() -> Self {
         println!("Initializing");
-        hudhook::utils::alloc_console();
+        // hudhook::utils::alloc_console();
         let proc_info = ProcessInfo::new(None).unwrap();
 
         let memory_pools = MainMemoryPools {
@@ -83,21 +83,11 @@ impl Context {
     // This has to be mutable because anything we get from the self player when we do a get
     // actually mutates the player itself. Maybe at some point we should use some sort of RefCell
     // since the player as it is doesn't *actually* change.
-    pub fn get_pos_rot(&mut self) -> Option<(Position, Rotation)> {
+    pub fn get_pos_rot(&mut self) -> Option<(Position, RotationMatrix)> {
         let camera = self.player.get_camera2()?;
-        let calc_const = self.create_functor_constant();
         let pos = camera.pos;
-        let rot = camera.get_rot(&calc_const);
+        let rot = camera.rot_matrix;
         Some((pos, rot))
-    }
-
-    fn create_functor_constant(&self) -> impl Fn(f32) -> f32 {
-        let base_addr = self.base_addr;
-        move |v| {
-            let weird_func: extern "C" fn(f32) -> f32 =
-                unsafe { std::mem::transmute(base_addr + 0x0e7cb60) };
-            return (weird_func)(v * 0.0055555 * std::f32::consts::PI);
-        }
     }
 }
 
