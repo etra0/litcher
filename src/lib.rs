@@ -39,7 +39,7 @@ use pointer::*;
 
 struct Context {
     memory_pools: MainMemoryPools,
-    lights: Vec<LightWrapper>,
+    lights: Vec<LightContainer>,
     show: bool,
     player: CR4Player,
     memory_pool_func: MemoryPoolFunc,
@@ -80,6 +80,17 @@ impl Context {
         }
     }
 
+    // This has to be mutable because anything we get from the self player when we do a get
+    // actually mutates the player itself. Maybe at some point we should use some sort of RefCell
+    // since the player as it is doesn't *actually* change.
+    pub fn get_pos_rot(&mut self) -> Option<(Position, Rotation)> {
+        let camera = self.player.get_camera2()?;
+        let calc_const = self.create_functor_constant();
+        let pos = camera.pos;
+        let rot = camera.get_rot(&calc_const);
+        Some((pos, rot))
+    }
+
     fn create_functor_constant(&self) -> impl Fn(f32) -> f32 {
         let base_addr = self.base_addr;
         move |v| {
@@ -88,116 +99,6 @@ impl Context {
             return (weird_func)(v * 0.0055555 * std::f32::consts::PI);
         }
     }
-
-    // TODO: fix the position stuff.
-    unsafe fn spawn_new_light(&mut self, kind: LightKind) {
-        // TODO: Ugh, find a way to just do one match.
-        let light_ptr = match kind {
-            LightKind::SpotLight => {
-                (self.memory_pool_func)(self.memory_pools.spotlight.read().unwrap(), 0, 1, 0)
-            }
-            LightKind::PointLight => {
-                (self.memory_pool_func)(self.memory_pools.pointlight.read().unwrap(), 0, 1, 0)
-            }
-        };
-
-        let camera = self.player.get_camera2().unwrap();
-        let calc_const = self.create_functor_constant();
-        light_ptr.entity.pos = camera.pos;
-        light_ptr.entity.rotations = camera.get_rot(&calc_const);
-
-        light_ptr.light.brightness = 1000.0;
-        light_ptr.light.radius = 180.0;
-        light_ptr.inner_angle = 10.0;
-        light_ptr.outer_angle = 40.0;
-        light_ptr.softness = 1.;
-
-        (light_ptr.entity.vt.set_flags)(light_ptr, self.player.get_world().unwrap());
-        light_ptr.shadow_casting_mode = 1;
-        light_ptr.is_enabled = true;
-
-        println!("new light: {:p}", light_ptr);
-        unsafe {
-            (light_ptr.entity.vt.set_flags)(light_ptr, self.player.get_world().unwrap());
-        }
-
-        self.lights.push(LightWrapper::new(kind, light_ptr));
-    }
-}
-
-// TODO: Fix this, only temporary solution.
-impl Default for Position {
-    fn default() -> Self {
-        Self {
-            x: -403.67,
-            y: -253.33,
-            z: 8.0,
-        }
-    }
-}
-
-fn render_window_per_light(
-    ui: &mut imgui_dx11::imgui::Ui,
-    light_wrapper: &mut LightWrapper,
-    ix: usize,
-) {
-    Window::new(format!("Light {}", ix))
-        .size([300.0, 210.0], Condition::FirstUseEver)
-        .build(ui, || {
-            let mut light = &mut light_wrapper.light;
-
-            let mut colors: [f32; 4] = light.light.color.into();
-            let cp = imgui::ColorPicker::new("color picker", &mut colors);
-            if cp.build(&ui) {
-                light.light.color = colors.into();
-            }
-
-            let mut brightness = light.light.brightness;
-            let mut radius = light.light.radius;
-
-            let mut inner_angle = light.inner_angle;
-            let mut outer_angle = light.outer_angle;
-            let mut softness = light.softness;
-            let mut casting_mode = light.shadow_casting_mode as i32;
-
-            imgui::Slider::new("Brightness", f32::MIN, f32::MAX)
-                .range(0.1, 10000.0)
-                .build(&ui, &mut brightness);
-            imgui::Slider::new("radius", f32::MIN, f32::MAX)
-                .range(0.1, 360.0)
-                .build(&ui, &mut radius);
-
-            imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
-                .range(0.1, 360.0)
-                .build(&ui, &mut inner_angle);
-
-            imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
-                .range(0.1, 360.0)
-                .build(&ui, &mut outer_angle);
-
-            imgui::Slider::new("Softness", f32::MIN, f32::MAX)
-                .range(0.1, 100.0)
-                .build(&ui, &mut softness);
-
-            let mut position: [f32; 3] = light.entity.pos.into();
-            imgui::InputFloat3::new(&ui, "Position", &mut position)
-                .no_horizontal_scroll(false)
-                .build();
-
-            imgui::InputInt::new(&ui, "Shadow casting mode", &mut casting_mode)
-                .build();
-
-            ui.checkbox("Is enabled", &mut light.is_enabled);
-            ui.checkbox("Attach to camera", &mut light_wrapper.attach_camera);
-
-            light.entity.pos = position.into();
-            light.light.brightness = brightness;
-            light.light.radius = radius;
-            light.inner_angle = inner_angle;
-            light.outer_angle = outer_angle;
-            light.softness = softness;
-            light.shadow_casting_mode = casting_mode as _;
-        });
 }
 
 impl ImguiRenderLoop for Context {
@@ -225,20 +126,24 @@ impl ImguiRenderLoop for Context {
             self.show = !self.show;
         }
 
-        // TODO: Remove this
         if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
             // Before we do the clear, let's just deactivate all the current lights.
-            for light_wrapper in self.lights.iter_mut() {
-                light_wrapper.light.is_enabled = false;
-                unsafe {
-                    (light_wrapper.light.entity.vt.set_flags)(
-                        light_wrapper.light,
-                        self.player.get_world().unwrap(),
-                    )
-                };
+            if let Some(world) = self.player.get_world() {
+                for light_wrapper in self.lights.iter_mut() {
+                    match &mut light_wrapper.light {
+                        LightType::SpotLight(l) => {
+                            l.light.is_enabled = false;
+                            l.update_render(world);
+                        }
+                        LightType::PointLight(l) => {
+                            l.light.is_enabled = false;
+                            l.update_render(world);
+                        }
+                    }
+                }
+                self.lights.clear();
+                self.player.updated();
             }
-            self.lights.clear();
-            self.player.updated();
         }
 
         if self.show {
@@ -246,41 +151,51 @@ impl ImguiRenderLoop for Context {
             Window::new("Main window")
                 .size([200.0, 200.0], Condition::FirstUseEver)
                 .build(ui, || {
+
                     if ui.button("Spawn new pointlight") {
-                        unsafe {
-                            self.spawn_new_light(LightKind::PointLight);
+                        if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+                            unsafe {
+                                let light = LightContainer::new(LightType::PointLight(PointLight::new(self.memory_pools.pointlight.read().unwrap(), self.memory_pool_func, pos, rot, world)));
+                                self.lights.push(light);
+                            }
                         }
                     }
 
                     if ui.button("Spawn new spotlight") {
-                        unsafe {
-                            self.spawn_new_light(LightKind::SpotLight);
+                        if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+                            unsafe {
+                                let light = LightContainer::new(LightType::SpotLight(SpotLight::new(self.memory_pools.spotlight.read().unwrap(), self.memory_pool_func, pos, rot, world)));
+                                self.lights.push(light);
+                            }
                         }
                     }
                 });
 
-            // ptr00 is invalid when the light is no longer being used (i.e. it's GC'ed)
-            self.lights.retain(|x: &LightWrapper| {
-                let ptr = &x.light;
+            self.lights.retain(|x: &LightContainer| {
+                let ptr = match &x.light {
+                    LightType::PointLight(PointLight { light, .. }) => light,
+                    LightType::SpotLight(SpotLight { light, .. }) => light,
+                };
                 !ptr.should_get_deleted()
             });
 
-            // TODO: Fix this stupid shit.
-            let calc_const = self.create_functor_constant();
-            for (i, light_wrapper) in self.lights.iter_mut().enumerate() {
-                render_window_per_light(ui, light_wrapper, i);
-                // TODO: Maybe rethink if I actually want this *here*
-                if light_wrapper.attach_camera {
-                    let camera_dir = self.player.get_camera2().unwrap();
+            if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+                let lights_iter = self.lights.iter_mut();
+                for (i, light_wrapper) in lights_iter.enumerate() {
+                    light_wrapper.render_window(ui, i);
 
-                    light_wrapper.light.entity.pos = camera_dir.pos;
-                    light_wrapper.light.entity.rotations = camera_dir.get_rot(&calc_const);
-                }
+                    match &mut light_wrapper.light {
+                        LightType::PointLight(pl) => {
+                            pl.update_render(world);
+                        },
+                        LightType::SpotLight(spl) => {
+                            spl.update_render(world);
+                        },
+                    };
 
-                let light = &mut light_wrapper.light;
-
-                unsafe {
-                    (light.entity.vt.set_flags)(*light, self.player.get_world().unwrap());
+                    if light_wrapper.attach_camera {
+                        light_wrapper.set_pos_rot(pos, rot);
+                    }
                 }
             }
         } else {
