@@ -324,7 +324,7 @@ impl PointLight {
 
     pub fn set_pos_rot(&mut self, pos: Position, rot: Rotation) {
         self.light.entity.pos = pos;
-        self.light.entity.rotations = rot;
+        _ = rot;
     }
 
     pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, attach_camera: &mut bool, ix: usize) {
