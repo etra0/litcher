@@ -1,4 +1,3 @@
-#![allow(unused)]
 use std::mem::MaybeUninit;
 
 use crate::pointer::*;
@@ -404,21 +403,21 @@ impl CR4Player {
         Self(player)
     }
 
-    pub fn get_world(&mut self) -> Option<usize> {
+    pub fn get_world(&self) -> Option<usize> {
         let layer = unsafe { self.0.read()?.ptr00? };
         let world = layer.ptr00? as *const _ as usize;
 
         Some(world)
     }
 
-    pub fn get_camera(&mut self) -> Option<&'static ScriptedEntity<EmptyVT>> {
+    pub fn get_camera(&self) -> Option<&'static ScriptedEntity<EmptyVT>> {
         let camera = unsafe { self.0.read()?.ptr01? };
 
         Some(camera)
     }
 
     // TODO: Remove this!
-    pub fn get_camera2(&mut self) -> Option<&'static CR4CameraDirector> {
+    pub fn get_camera2(&self) -> Option<&'static CR4CameraDirector> {
         let layer = unsafe { self.0.read()?.ptr00? };
         let world = layer.ptr01?;
 
@@ -427,13 +426,14 @@ impl CR4Player {
         Some(camera_dir)
     }
 
+    // TODO: Check if this actually copies internal values.
     pub fn should_update(&self) -> bool {
-        self.0.should_update || self.0.last_value.is_none()
+        *self.0.should_update.lock().unwrap() || self.0.last_value.lock().unwrap().is_none()
     }
 
     pub fn updated(&mut self) {
-        self.0.should_update = false;
-        self.0.last_value = None;
+        *self.0.should_update.lock().unwrap() = false;
+        *self.0.last_value.lock().unwrap() = None;
     }
 }
 

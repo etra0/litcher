@@ -80,10 +80,7 @@ impl Context {
         }
     }
 
-    // This has to be mutable because anything we get from the self player when we do a get
-    // actually mutates the player itself. Maybe at some point we should use some sort of RefCell
-    // since the player as it is doesn't *actually* change.
-    pub fn get_pos_rot(&mut self) -> Option<(Position, RotationMatrix)> {
+    pub fn get_pos_rot(&self) -> Option<(Position, RotationMatrix)> {
         let camera = self.player.get_camera2()?;
         let pos = camera.pos;
         let rot = camera.rot_matrix;
