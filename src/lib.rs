@@ -50,6 +50,7 @@ impl Context {
     fn new() -> Self {
         println!("Initializing");
         // hudhook::utils::alloc_console();
+        // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
 
         let memory_pools = MainMemoryPools {
@@ -73,7 +74,7 @@ impl Context {
         Self {
             memory_pools,
             lights,
-            show: false,
+            show: true,
             player: CR4Player::new(player),
             memory_pool_func,
             base_addr: proc_info.region.start_address,
@@ -113,6 +114,10 @@ impl ImguiRenderLoop for Context {
             self.show = !self.show;
         }
 
+        if ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
+            hudhook::lifecycle::eject();
+        }
+
         if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
             // Before we do the clear, let's just deactivate all the current lights.
             if let Some(world) = self.player.get_world() {
@@ -132,6 +137,14 @@ impl ImguiRenderLoop for Context {
                 self.player.updated();
             }
         }
+
+        self.lights.retain(|x: &LightContainer| {
+            let ptr = match &x.light {
+                LightType::PointLight(PointLight { light, .. }) => light,
+                LightType::SpotLight(SpotLight { light, .. }) => light,
+            };
+            !ptr.should_get_deleted()
+        });
 
         if self.show {
             ui.set_mouse_cursor(Some(imgui::MouseCursor::Arrow));
@@ -158,41 +171,32 @@ impl ImguiRenderLoop for Context {
                     }
                 });
 
-            self.lights.retain(|x: &LightContainer| {
-                let ptr = match &x.light {
-                    LightType::PointLight(PointLight { light, .. }) => light,
-                    LightType::SpotLight(SpotLight { light, .. }) => light,
-                };
-                !ptr.should_get_deleted()
-            });
+            self.lights.iter_mut().enumerate().for_each(|(i, lw)| lw.render_window(ui, i));
 
-            if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
-                let lights_iter = self.lights.iter_mut();
-                for (i, light_wrapper) in lights_iter.enumerate() {
-                    light_wrapper.render_window(ui, i);
-
-                    match &mut light_wrapper.light {
-                        LightType::PointLight(pl) => {
-                            pl.update_render(world);
-                        },
-                        LightType::SpotLight(spl) => {
-                            spl.update_render(world);
-                        },
-                    };
-
-                    if light_wrapper.attach_camera {
-                        light_wrapper.set_pos_rot(pos, rot);
-                    }
-                }
-            }
         } else {
             ui.set_mouse_cursor(None);
+        }
+
+        if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+            for light_wrapper in self.lights.iter_mut() {
+                if light_wrapper.attach_camera {
+                    light_wrapper.set_pos_rot(pos, rot);
+                }
+
+                match &mut light_wrapper.light {
+                    LightType::PointLight(pl) => {
+                        pl.update_render(world);
+                    },
+                    LightType::SpotLight(spl) => {
+                        spl.update_render(world);
+                    },
+                };
+            }
         }
     }
 
     fn should_block_messages(&self, io: &imgui::Io) -> bool {
-        _ = io;
-        false
+        self.show
     }
 }
 

@@ -47,12 +47,22 @@ pub enum LightType {
     PointLight(&'static mut PointLight),
 }
 
+impl LightType {
+    pub fn get_light_mut(&mut self) -> &mut LightEntity {
+        match self {
+            Self::SpotLight(SpotLight { light, .. }) => light,
+            Self::PointLight(PointLight { light, .. }) => light,
+        }
+    }
+}
+
 // This is the struct that *we* control
 pub struct LightContainer {
     pub light: LightType,
 
     // our settings
     pub attach_camera: bool,
+    pub color: [f32; 4]
 }
 
 impl LightContainer {
@@ -60,6 +70,7 @@ impl LightContainer {
         Self {
             light,
             attach_camera: false,
+            color: [255.; 4],
         }
     }
 
@@ -74,15 +85,86 @@ impl LightContainer {
         };
     }
 
-    pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, ix: usize) {
-        match &mut self.light {
-            LightType::PointLight(pl) => {
-                pl.render_window(ui, &mut self.attach_camera, ix);
-            },
-            LightType::SpotLight(spl) => {
-                spl.render_window(ui, &mut self.attach_camera, ix);
-            },
-        };
+    pub fn render_window(&mut self, ui: &mut imgui::Ui, ix: usize) {
+        Window::new(format!("Light {}", ix))
+            .size([300.0, 210.0], Condition::FirstUseEver)
+            .build(ui, || {
+                let mut light = self.light.get_light_mut();
+
+                imgui::ColorPicker::new("color picker", &mut self.color).build(ui);
+                light.light_settings.color = self.color.into();
+
+                let mut brightness = light.light_settings.brightness;
+                let mut radius = light.light_settings.radius;
+                let mut casting_mode = light.shadow_casting_mode as usize;
+                let mut position: [f32; 3] = light.entity.pos.into();
+                imgui::InputFloat3::new(ui, "Position", &mut position)
+                    .no_horizontal_scroll(false)
+                    .build();
+
+                imgui::Slider::new("Brightness", 0.1, 100000.0)
+                    .build(ui, &mut brightness);
+
+                imgui::Slider::new("Radius", f32::MIN, f32::MAX)
+                    .range(0.1, 180.0)
+                    .build(ui, &mut radius);
+
+                const shadows: [&str; 3] = ["0 - No shadows", "1 - Characters and objects", "2 - Characters only"];
+                ui.combo("Shadow casting mode", &mut casting_mode, &[0, 1, 2], |&i| shadows[i].into());
+
+                ui.checkbox("Is enabled", &mut light.is_enabled);
+                ui.checkbox("Attach to camera", &mut self.attach_camera);
+
+                light.entity.pos = position.into();
+                light.light_settings.brightness = brightness;
+                light.light_settings.radius = radius;
+                light.shadow_casting_mode = casting_mode as _;
+
+                ui.separator();
+
+                match &mut self.light {
+                    LightType::PointLight(pl) => {
+                        ui.text("Pointlight specific");
+                        let mut cache_static_shadows: bool = pl.cache_static_shadows != 0;
+                        let mut dynamic_shadow_face_mask: bool = pl.dynamic_shadow_face_mask != 0;
+
+                        ui.checkbox("Cache static shadows", &mut cache_static_shadows);
+                        ui.checkbox("Dynamic Shadow Face Mask", &mut dynamic_shadow_face_mask);
+
+                        pl.cache_static_shadows = cache_static_shadows as _;
+                        pl.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8)*0x3F;
+                    },
+                    LightType::SpotLight(spl) => {
+                        ui.text("Spotlight specific");
+                        let mut inner_angle = spl.inner_angle;
+                        let mut outer_angle = spl.outer_angle;
+                        let mut softness = spl.softness;
+
+                        imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
+                            .range(0.1, outer_angle - 1.0)
+                            .build(ui, &mut inner_angle);
+
+                        imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
+                            .range(0.1, 180.0)
+                            .build(ui, &mut outer_angle);
+
+                        imgui::Slider::new("Softness", f32::MIN, f32::MAX)
+                            .range(0.1, 100.0)
+                            .build(ui, &mut softness);
+
+
+                        spl.outer_angle = outer_angle;
+                        spl.inner_angle = inner_angle;
+                        if spl.outer_angle < spl.inner_angle {
+                            spl.inner_angle = spl.outer_angle - 1.;
+                        }
+                        spl.softness = softness;
+                    },
+                };
+
+
+            });
+
     }
 }
 
@@ -198,70 +280,6 @@ impl SpotLight {
         self.light.entity.pos = pos;
         self.light.entity.rot_matrix = rot;
     }
-
-    pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, attach_camera: &mut bool, ix: usize) {
-        Window::new(format!("Light {}", ix))
-            .size([300.0, 210.0], Condition::FirstUseEver)
-            .build(ui, || {
-                let mut light = &mut self.light;
-
-                let mut colors: [f32; 4] = light.light_settings.color.into();
-                let cp = imgui::ColorPicker::new("color picker", &mut colors);
-                if cp.build(&ui) {
-                    light.light_settings.color = colors.into();
-                }
-
-                let mut brightness = light.light_settings.brightness;
-                let mut radius = light.light_settings.radius;
-
-                let mut inner_angle = self.inner_angle;
-                let mut outer_angle = self.outer_angle;
-                let mut softness = self.softness;
-                let mut casting_mode = light.shadow_casting_mode as i32;
-
-                imgui::Slider::new("Brightness", f32::MIN, f32::MAX)
-                    .range(0.1, 100000.0)
-                    .build(&ui, &mut brightness);
-                imgui::Slider::new("radius", f32::MIN, f32::MAX)
-                    .range(0.1, 180.0)
-                    .build(&ui, &mut radius);
-
-                imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
-                    .range(0.1, outer_angle - 1.0)
-                    .build(&ui, &mut inner_angle);
-
-                imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
-                    .range(0.1, 180.0)
-                    .build(&ui, &mut outer_angle);
-
-                imgui::Slider::new("Softness", f32::MIN, f32::MAX)
-                    .range(0.1, 100.0)
-                    .build(&ui, &mut softness);
-
-                let mut position: [f32; 3] = light.entity.pos.into();
-                imgui::InputFloat3::new(&ui, "Position", &mut position)
-                    .no_horizontal_scroll(false)
-                    .build();
-
-                imgui::InputInt::new(&ui, "Shadow casting mode", &mut casting_mode)
-                    .build();
-
-                ui.checkbox("Is enabled", &mut light.is_enabled);
-                ui.checkbox("Attach to camera", attach_camera);
-
-                light.entity.pos = position.into();
-                light.light_settings.brightness = brightness;
-                light.light_settings.radius = radius;
-                self.outer_angle = outer_angle;
-                self.inner_angle = inner_angle;
-                if self.outer_angle < self.inner_angle {
-                    self.inner_angle = self.outer_angle - 1.;
-                }
-                self.softness = softness;
-                light.shadow_casting_mode = casting_mode as _;
-            });
-
-    }
  
     pub fn update_render(&mut self, world: usize) {
         unsafe { (self.light.entity.vt.set_flags)(&mut self.light, world) };
@@ -304,54 +322,6 @@ impl PointLight {
     pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
         self.light.entity.pos = pos;
         self.light.entity.rot_matrix = rot;
-    }
-
-    pub fn render_window(&mut self, ui: &mut imgui_dx11::imgui::Ui, attach_camera: &mut bool, ix: usize) {
-        Window::new(format!("Light {}", ix))
-            .size([300.0, 210.0], Condition::FirstUseEver)
-            .build(ui, || {
-                let mut light = &mut self.light;
-
-                let mut colors: [f32; 4] = light.light_settings.color.into();
-                let cp = imgui::ColorPicker::new("color picker", &mut colors);
-                if cp.build(&ui) {
-                    light.light_settings.color = colors.into();
-                }
-
-                let mut brightness = light.light_settings.brightness;
-                let mut radius = light.light_settings.radius;
-                let mut casting_mode = light.shadow_casting_mode as i32;
-                let mut cache_static_shadows: bool = self.cache_static_shadows != 0;
-                let mut dynamic_shadow_face_mask: bool = self.dynamic_shadow_face_mask != 0;
-
-                imgui::Slider::new("Brightness", f32::MIN, f32::MAX)
-                    .range(0.1, 100000.0)
-                    .build(&ui, &mut brightness);
-                imgui::Slider::new("radius", f32::MIN, f32::MAX)
-                    .range(0.1, 180.0)
-                    .build(&ui, &mut radius);
-
-                let mut position: [f32; 3] = light.entity.pos.into();
-                imgui::InputFloat3::new(&ui, "Position", &mut position)
-                    .no_horizontal_scroll(false)
-                    .build();
-
-                imgui::InputInt::new(&ui, "Shadow casting mode", &mut casting_mode)
-                    .build();
-
-                ui.checkbox("Is enabled", &mut light.is_enabled);
-                ui.checkbox("Attach to camera", attach_camera);
-                ui.checkbox("Cache static shadows", &mut cache_static_shadows);
-                ui.checkbox("Dynamic Shadow Face Mask", &mut dynamic_shadow_face_mask);
-
-                light.entity.pos = position.into();
-                light.light_settings.brightness = brightness;
-                light.light_settings.radius = radius;
-                light.shadow_casting_mode = casting_mode as _;
-                self.cache_static_shadows = cache_static_shadows as _;
-                self.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8)*0x3F;
-            });
-
     }
 
     pub fn update_render(&mut self, world: usize) {
