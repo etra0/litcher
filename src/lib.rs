@@ -151,28 +151,47 @@ impl ImguiRenderLoop for Context {
             Window::new("Main window")
                 .size([200.0, 200.0], Condition::FirstUseEver)
                 .build(ui, || {
-
                     if ui.button("Spawn new pointlight") {
-                        if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+                        if let (Some((pos, rot)), Some(world)) =
+                            (self.get_pos_rot(), self.player.get_world())
+                        {
                             unsafe {
-                                let light = LightContainer::new(LightType::PointLight(PointLight::new(self.memory_pools.pointlight.read().unwrap(), self.memory_pool_func, pos, rot, world)));
+                                let light =
+                                    LightContainer::new(LightType::PointLight(PointLight::new(
+                                        self.memory_pools.pointlight.read().unwrap(),
+                                        self.memory_pool_func,
+                                        pos,
+                                        rot,
+                                        world,
+                                    )));
                                 self.lights.push(light);
                             }
                         }
                     }
 
                     if ui.button("Spawn new spotlight") {
-                        if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
+                        if let (Some((pos, rot)), Some(world)) =
+                            (self.get_pos_rot(), self.player.get_world())
+                        {
                             unsafe {
-                                let light = LightContainer::new(LightType::SpotLight(SpotLight::new(self.memory_pools.spotlight.read().unwrap(), self.memory_pool_func, pos, rot, world)));
+                                let light =
+                                    LightContainer::new(LightType::SpotLight(SpotLight::new(
+                                        self.memory_pools.spotlight.read().unwrap(),
+                                        self.memory_pool_func,
+                                        pos,
+                                        rot,
+                                        world,
+                                    )));
                                 self.lights.push(light);
                             }
                         }
                     }
                 });
 
-            self.lights.iter_mut().enumerate().for_each(|(i, lw)| lw.render_window(ui, i));
-
+            self.lights
+                .iter_mut()
+                .enumerate()
+                .for_each(|(i, lw)| lw.render_window(ui, i));
         } else {
             ui.set_mouse_cursor(None);
         }
@@ -186,10 +205,10 @@ impl ImguiRenderLoop for Context {
                 match &mut light_wrapper.light {
                     LightType::PointLight(pl) => {
                         pl.update_render(world);
-                    },
+                    }
                     LightType::SpotLight(spl) => {
                         spl.update_render(world);
-                    },
+                    }
                 };
             }
         }

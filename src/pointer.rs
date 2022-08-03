@@ -6,7 +6,7 @@ pub struct Pointer<T: 'static> {
     offsets: Vec<usize>,
     _marker: PhantomData<T>,
     pub last_value: Mutex<Option<usize>>,
-    pub should_update: Mutex<bool>
+    pub should_update: Mutex<bool>,
 }
 
 impl<T: 'static> Pointer<T> {
@@ -16,7 +16,7 @@ impl<T: 'static> Pointer<T> {
             offsets,
             _marker: PhantomData::default(),
             last_value: Mutex::new(None),
-            should_update: Mutex::new(false)
+            should_update: Mutex::new(false),
         }
     }
 
@@ -42,5 +42,4 @@ impl<T: 'static> Pointer<T> {
 
         Some(std::mem::transmute(current_addr))
     }
-
 }

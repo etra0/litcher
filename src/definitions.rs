@@ -1,7 +1,7 @@
 use std::mem::MaybeUninit;
 
 use crate::pointer::*;
-use imgui::{Window, Condition};
+use imgui::{Condition, Window};
 use lazy_re::{lazy_re, LazyRe};
 
 #[repr(C, packed)]
@@ -14,7 +14,7 @@ pub struct Position {
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
-pub struct RotationMatrix([f32; 4*3]);
+pub struct RotationMatrix([f32; 4 * 3]);
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
@@ -62,7 +62,7 @@ pub struct LightContainer {
 
     // our settings
     pub attach_camera: bool,
-    pub color: [f32; 4]
+    pub color: [f32; 4],
 }
 
 impl LightContainer {
@@ -78,10 +78,10 @@ impl LightContainer {
         match &mut self.light {
             LightType::PointLight(pl) => {
                 pl.set_pos_rot(pos, rot);
-            },
+            }
             LightType::SpotLight(spl) => {
                 spl.set_pos_rot(pos, rot);
-            },
+            }
         };
     }
 
@@ -102,15 +102,20 @@ impl LightContainer {
                     .no_horizontal_scroll(false)
                     .build();
 
-                imgui::Slider::new("Brightness", 0.1, 100000.0)
-                    .build(ui, &mut brightness);
+                imgui::Slider::new("Brightness", 0.1, 100000.0).build(ui, &mut brightness);
 
                 imgui::Slider::new("Radius", f32::MIN, f32::MAX)
                     .range(0.1, 180.0)
                     .build(ui, &mut radius);
 
-                const shadows: [&str; 3] = ["0 - No shadows", "1 - Characters and objects", "2 - Characters only"];
-                ui.combo("Shadow casting mode", &mut casting_mode, &[0, 1, 2], |&i| shadows[i].into());
+                const shadows: [&str; 3] = [
+                    "0 - No shadows",
+                    "1 - Characters and objects",
+                    "2 - Characters only",
+                ];
+                ui.combo("Shadow casting mode", &mut casting_mode, &[0, 1, 2], |&i| {
+                    shadows[i].into()
+                });
 
                 ui.checkbox("Is enabled", &mut light.is_enabled);
                 ui.checkbox("Attach to camera", &mut self.attach_camera);
@@ -132,8 +137,8 @@ impl LightContainer {
                         ui.checkbox("Dynamic Shadow Face Mask", &mut dynamic_shadow_face_mask);
 
                         pl.cache_static_shadows = cache_static_shadows as _;
-                        pl.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8)*0x3F;
-                    },
+                        pl.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8) * 0x3F;
+                    }
                     LightType::SpotLight(spl) => {
                         ui.text("Spotlight specific");
                         let mut inner_angle = spl.inner_angle;
@@ -152,19 +157,15 @@ impl LightContainer {
                             .range(0.1, 100.0)
                             .build(ui, &mut softness);
 
-
                         spl.outer_angle = outer_angle;
                         spl.inner_angle = inner_angle;
                         if spl.outer_angle < spl.inner_angle {
                             spl.inner_angle = spl.outer_angle - 1.;
                         }
                         spl.softness = softness;
-                    },
+                    }
                 };
-
-
             });
-
     }
 }
 
@@ -255,8 +256,15 @@ pub struct SpotLight {
 }
 
 impl SpotLight {
-    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: RotationMatrix, world: usize) -> &'static mut Self {
-        let light_ptr: &'static mut Self = unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
+    pub fn new(
+        memory_pool: &'static mut MemoryPool,
+        memory_pool_func: MemoryPoolFunc,
+        position: Position,
+        rot: RotationMatrix,
+        world: usize,
+    ) -> &'static mut Self {
+        let light_ptr: &'static mut Self =
+            unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -280,7 +288,7 @@ impl SpotLight {
         self.light.entity.pos = pos;
         self.light.entity.rot_matrix = rot;
     }
- 
+
     pub fn update_render(&mut self, world: usize) {
         unsafe { (self.light.entity.vt.set_flags)(&mut self.light, world) };
     }
@@ -293,12 +301,19 @@ pub struct PointLight {
 
     #[lazy_re(offset = 0x180)]
     pub cache_static_shadows: u8,
-    pub dynamic_shadow_face_mask: u8
+    pub dynamic_shadow_face_mask: u8,
 }
 
 impl PointLight {
-    pub fn new(memory_pool: &'static mut MemoryPool, memory_pool_func: MemoryPoolFunc, position: Position, rot: RotationMatrix, world: usize) -> &'static mut Self {
-        let light_ptr: &'static mut Self = unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
+    pub fn new(
+        memory_pool: &'static mut MemoryPool,
+        memory_pool_func: MemoryPoolFunc,
+        position: Position,
+        rot: RotationMatrix,
+        world: usize,
+    ) -> &'static mut Self {
+        let light_ptr: &'static mut Self =
+            unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -308,7 +323,6 @@ impl PointLight {
 
         light_ptr.cache_static_shadows = 1;
         light_ptr.dynamic_shadow_face_mask = 1;
-
 
         light_ptr.light.shadow_casting_mode = 1;
         light_ptr.light.is_enabled = true;
