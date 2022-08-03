@@ -3,26 +3,9 @@
 //! pointer and the world. It's useful to hook into it to steal the world pointer.
 //! Offset of the CR4Player Memory Pool: [$process + 2d56848]
 #![feature(once_cell)]
-#![allow(unused_imports)]
 
-use memory_rs::internal::{
-    injections::{Detour, Inject, Injection},
-    memory::resolve_module_path,
-    process_info::ProcessInfo,
-};
-use std::{ffi::c_void, sync::Arc};
-use windows_sys::Win32::{
-    System::{
-        Console::{AllocConsole, FreeConsole},
-        LibraryLoader::{FreeLibraryAndExitThread, GetModuleHandleA, GetProcAddress},
-    },
-    UI::Input::{
-        KeyboardAndMouse::*,
-        XboxController::{XInputGetState, XINPUT_STATE},
-    },
-};
-
-use lazy_re::{lazy_re, LazyRe};
+use memory_rs::internal::{memory::resolve_module_path, process_info::ProcessInfo};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
 use log::*;
 use simplelog::*;
@@ -43,7 +26,6 @@ struct Context {
     show: bool,
     player: CR4Player,
     memory_pool_func: MemoryPoolFunc,
-    base_addr: usize,
 }
 
 impl Context {
@@ -77,12 +59,11 @@ impl Context {
             show: true,
             player: CR4Player::new(player),
             memory_pool_func,
-            base_addr: proc_info.region.start_address,
         }
     }
 
     pub fn get_pos_rot(&self) -> Option<(Position, RotationMatrix)> {
-        let camera = self.player.get_camera2()?;
+        let camera = self.player.get_camera()?;
         let pos = camera.pos;
         let rot = camera.rot_matrix;
         Some((pos, rot))
@@ -214,7 +195,7 @@ impl ImguiRenderLoop for Context {
         }
     }
 
-    fn should_block_messages(&self, io: &imgui::Io) -> bool {
+    fn should_block_messages(&self, _io: &imgui::Io) -> bool {
         self.show
     }
 }

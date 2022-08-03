@@ -1,8 +1,6 @@
-use std::mem::MaybeUninit;
-
 use crate::pointer::*;
 use imgui::{Condition, Window};
-use lazy_re::{lazy_re, LazyRe};
+use lazy_re::lazy_re;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -108,13 +106,13 @@ impl LightContainer {
                     .range(0.1, 180.0)
                     .build(ui, &mut radius);
 
-                const shadows: [&str; 3] = [
+                const SHADOWS_OPTIONS: [&str; 3] = [
                     "0 - No shadows",
                     "1 - Characters and objects",
                     "2 - Characters only",
                 ];
                 ui.combo("Shadow casting mode", &mut casting_mode, &[0, 1, 2], |&i| {
-                    shadows[i].into()
+                    SHADOWS_OPTIONS[i].into()
                 });
 
                 ui.checkbox("Is enabled", &mut light.is_enabled);
@@ -394,14 +392,8 @@ impl CR4Player {
         Some(world)
     }
 
-    pub fn get_camera(&self) -> Option<&'static ScriptedEntity<EmptyVT>> {
-        let camera = unsafe { self.0.read()?.ptr01? };
-
-        Some(camera)
-    }
-
     // TODO: Remove this!
-    pub fn get_camera2(&self) -> Option<&'static CR4CameraDirector> {
+    pub fn get_camera(&self) -> Option<&'static CR4CameraDirector> {
         let layer = unsafe { self.0.read()?.ptr00? };
         let world = layer.ptr01?;
 
