@@ -33,7 +33,10 @@ struct Context {
 impl Context {
     fn new() -> Self {
         println!("Initializing");
-        hudhook::utils::alloc_console();
+
+        if cfg!(debug_assertions) {
+            hudhook::utils::alloc_console();
+        }
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
 
@@ -185,7 +188,7 @@ impl ImguiRenderLoop for Context {
             self.show = !self.show;
         }
 
-        if ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
+        if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
             hudhook::lifecycle::eject();
         }
 
