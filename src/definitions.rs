@@ -61,15 +61,43 @@ pub struct LightContainer {
     // our settings
     pub attach_camera: bool,
     pub color: [f32; 4],
+    pub open: bool,
+    pub id: String,
 }
 
 impl LightContainer {
-    pub fn new(light: LightType) -> Self {
+    pub fn new(light: LightType, id: usize) -> Self {
         Self {
             light,
             attach_camera: false,
-            color: [255.; 4],
+            color: [1.; 4],
+            open: true,
+            id: format!("Light {}", id),
         }
+    }
+
+    fn update_render(&mut self, world: usize) {
+        match &mut self.light {
+            LightType::SpotLight(l) => {
+                l.update_render(world);
+            }
+            LightType::PointLight(l) => {
+                l.update_render(world);
+            }
+        }
+    }
+
+    // Soft remove the light from the game.
+    // We trust the MemoryPool to actually clean this pointer, we just disable its visibility.
+    pub fn remove_light(mut self, world: usize) {
+        self.light.get_light_mut().is_enabled = false;
+        self.update_render(world);
+    }
+
+    pub fn toggle(&mut self, world: usize) {
+        let light = self.light.get_light_mut();
+        light.is_enabled = !light.is_enabled;
+        self.update_render(world);
     }
 
     pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
@@ -83,9 +111,14 @@ impl LightContainer {
         };
     }
 
-    pub fn render_window(&mut self, ui: &mut imgui::Ui, ix: usize) {
-        Window::new(format!("Light {}", ix))
-            .size([300.0, 210.0], Condition::FirstUseEver)
+    pub fn render_window(&mut self, ui: &mut imgui::Ui) {
+        if !self.open {
+            return;
+        }
+
+        Window::new(&self.id)
+            .size([350.0, 510.0], Condition::FirstUseEver)
+            .opened(&mut self.open)
             .build(ui, || {
                 let mut light = self.light.get_light_mut();
 
@@ -111,7 +144,7 @@ impl LightContainer {
                     "1 - Characters and objects",
                     "2 - Characters only",
                 ];
-                ui.combo("Shadow casting mode", &mut casting_mode, &[0, 1, 2], |&i| {
+                ui.combo("Shadow cast", &mut casting_mode, &[0, 1, 2], |&i| {
                     SHADOWS_OPTIONS[i].into()
                 });
 

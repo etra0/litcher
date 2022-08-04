@@ -4,6 +4,7 @@
 //! Offset of the CR4Player Memory Pool: [$process + 2d56848]
 #![feature(once_cell)]
 
+use imgui::ColorEditFlags;
 use memory_rs::internal::{memory::resolve_module_path, process_info::ProcessInfo};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
@@ -26,12 +27,13 @@ struct Context {
     show: bool,
     player: CR4Player,
     memory_pool_func: MemoryPoolFunc,
+    id_track: usize
 }
 
 impl Context {
     fn new() -> Self {
         println!("Initializing");
-        // hudhook::utils::alloc_console();
+        hudhook::utils::alloc_console();
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
 
@@ -59,6 +61,7 @@ impl Context {
             show: true,
             player: CR4Player::new(player),
             memory_pool_func,
+            id_track: 0,
         }
     }
 
@@ -67,6 +70,93 @@ impl Context {
         let pos = camera.pos;
         let rot = camera.rot_matrix;
         Some((pos, rot))
+    }
+
+    pub fn main_window(&mut self, ui: &mut imgui::Ui) {
+        Window::new("The Litcher, by @etra0")
+            .size([410.0, 200.0], Condition::FirstUseEver)
+            .build(ui, || {
+                if ui.button("Spawn new pointlight") {
+                    if let (Some((pos, rot)), Some(world)) =
+                        (self.get_pos_rot(), self.player.get_world())
+                    {
+                        unsafe {
+                            let light =
+                                LightContainer::new(LightType::PointLight(PointLight::new(
+                                            self.memory_pools.pointlight.read().unwrap(),
+                                            self.memory_pool_func,
+                                            pos,
+                                            rot,
+                                            world,
+                                )), self.id_track);
+                            self.id_track += 1;
+                            self.lights.push(light);
+                        }
+                    }
+                }
+
+                if ui.button("Spawn new spotlight") {
+                    if let (Some((pos, rot)), Some(world)) =
+                        (self.get_pos_rot(), self.player.get_world())
+                    {
+                        unsafe {
+                            let light =
+                                LightContainer::new(LightType::SpotLight(SpotLight::new(
+                                            self.memory_pools.spotlight.read().unwrap(),
+                                            self.memory_pool_func,
+                                            pos,
+                                            rot,
+                                            world,
+                                )), self.id_track);
+                            self.id_track += 1;
+                            self.lights.push(light);
+                        }
+                    }
+                }
+
+                ui.separator();
+
+                let world = self.player.get_world();
+                if world.is_none() {
+                    return;
+                }
+
+                let world = world.unwrap();
+
+                let mut light_to_remove = None;
+                self.lights.iter_mut().enumerate().for_each(|(i, light)| {
+                    let id = ui.push_id(&light.id);
+                    // TODO: maybe remove allocations from here, lol
+                    if ui.button("X") {
+                        light_to_remove = Some(i);
+                    }
+                    ui.same_line();
+                    ui.text(&light.id);
+                    ui.same_line();
+                    imgui::ColorButton::new("Color of light ##", light.color)
+                        .flags(ColorEditFlags::NO_INPUTS | ColorEditFlags::NO_LABEL)
+                        .build(ui);
+                    ui.same_line();
+                    if ui.button("Edit") {
+                        light.open = true;
+                    }
+                    ui.same_line();
+                    if ui.button("Toggle on/off") {
+                        light.toggle(world);
+                    }
+
+                    ui.same_line();
+                    ui.checkbox("Attach to camera", &mut light.attach_camera);
+
+                    id.end();
+                });
+
+                if let Some(ix) = light_to_remove {
+                    println!("Light to remove: {}", ix);
+                    let light = self.lights.remove(ix);
+                    light.remove_light(world);
+                }
+            });
     }
 }
 
@@ -102,19 +192,9 @@ impl ImguiRenderLoop for Context {
         if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
             // Before we do the clear, let's just deactivate all the current lights.
             if let Some(world) = self.player.get_world() {
-                for light_wrapper in self.lights.iter_mut() {
-                    match &mut light_wrapper.light {
-                        LightType::SpotLight(l) => {
-                            l.light.is_enabled = false;
-                            l.update_render(world);
-                        }
-                        LightType::PointLight(l) => {
-                            l.light.is_enabled = false;
-                            l.update_render(world);
-                        }
-                    }
-                }
-                self.lights.clear();
+                self.lights.drain(..).for_each(|light| {
+                    light.remove_light(world);
+                });
                 self.player.updated();
             }
         }
@@ -129,50 +209,11 @@ impl ImguiRenderLoop for Context {
 
         if self.show {
             ui.set_mouse_cursor(Some(imgui::MouseCursor::Arrow));
-            Window::new("Main window")
-                .size([200.0, 200.0], Condition::FirstUseEver)
-                .build(ui, || {
-                    if ui.button("Spawn new pointlight") {
-                        if let (Some((pos, rot)), Some(world)) =
-                            (self.get_pos_rot(), self.player.get_world())
-                        {
-                            unsafe {
-                                let light =
-                                    LightContainer::new(LightType::PointLight(PointLight::new(
-                                        self.memory_pools.pointlight.read().unwrap(),
-                                        self.memory_pool_func,
-                                        pos,
-                                        rot,
-                                        world,
-                                    )));
-                                self.lights.push(light);
-                            }
-                        }
-                    }
-
-                    if ui.button("Spawn new spotlight") {
-                        if let (Some((pos, rot)), Some(world)) =
-                            (self.get_pos_rot(), self.player.get_world())
-                        {
-                            unsafe {
-                                let light =
-                                    LightContainer::new(LightType::SpotLight(SpotLight::new(
-                                        self.memory_pools.spotlight.read().unwrap(),
-                                        self.memory_pool_func,
-                                        pos,
-                                        rot,
-                                        world,
-                                    )));
-                                self.lights.push(light);
-                            }
-                        }
-                    }
-                });
+            self.main_window(ui);
 
             self.lights
                 .iter_mut()
-                .enumerate()
-                .for_each(|(i, lw)| lw.render_window(ui, i));
+                .for_each(|lw| lw.render_window(ui));
         } else {
             ui.set_mouse_cursor(None);
         }
