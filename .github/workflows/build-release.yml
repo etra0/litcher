@@ -1,0 +1,44 @@
+name: Build and release
+
+on:
+  push:
+    tags: v*
+    paths: 
+      - Cargo.toml
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check for current tag release
+      run: python release_tools.py check_tag
+      
+    - name: Install Rust nightly
+      run: rustup default nightly
+      
+    - name: Build
+      run: cargo build --verbose --release
+      
+    - name: Pack Release files
+      run: |
+        Copy target/release/litcher.dll ./litcher.dll
+        Copy target/release/injector.exe ./litcher.exe
+        tar -a -c -f the_litcher.zip litcher.dll litcher.exe
+      
+    - name: Set Release version
+      run: echo "TAG_VERSION=$(python release_tools.py version)" >> $env:GITHUB_ENV
+      
+    - name: "Automatic Release"
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "${{ env.TAG_VERSION }}"
+        prerelease: false
+        title: "${{ env.TAG_VERSION }}"
+        files: |
+          the_litcher.zip
