@@ -8,11 +8,12 @@ def main() -> None:
     parser.add_argument("task", type=str, default="version", choices=["version", "check_tag"])
     args = parser.parse_args()
 
-    match args.task:
-        case "version":
-            print(get_version())
-        case "check_tag":
-            check_tag()
+    if args.task == "version":
+        print(get_version())
+    elif args.task == "check_tag":
+        check_tag()
+    else:
+        raise Exception("Unknown option")
 
 def check_tag() -> None:
     """
