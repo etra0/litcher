@@ -1,6 +1,7 @@
 use crate::pointer::*;
 use imgui::{Condition, Window};
 use lazy_re::lazy_re;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CONTROL;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -133,7 +134,10 @@ impl LightContainer {
                     .no_horizontal_scroll(false)
                     .build();
 
-                imgui::Slider::new("Brightness", 0.1, 100000.0).build(ui, &mut brightness);
+                imgui::Drag::new("Brightness")
+                    .range(0.1, 100000.0)
+                    .speed(if ui.is_key_index_down(VK_CONTROL as _) { 20.0 } else { 1.0 })
+                    .build(ui, &mut brightness);
 
                 imgui::Slider::new("Radius", f32::MIN, f32::MAX)
                     .range(0.1, 180.0)
