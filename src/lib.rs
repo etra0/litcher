@@ -27,8 +27,10 @@ struct Context {
     show: bool,
     player: CR4Player,
     memory_pool_func: MemoryPoolFunc,
-    id_track: usize
+    id_track: usize,
 }
+
+const VERSION: &'static str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
 
 impl Context {
     fn new() -> Self {
@@ -76,7 +78,7 @@ impl Context {
     }
 
     pub fn main_window(&mut self, ui: &mut imgui::Ui) {
-        Window::new("The Litcher, by @etra0")
+        Window::new(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
             .build(ui, || {
                 if ui.button("Spawn new pointlight") {
@@ -84,14 +86,16 @@ impl Context {
                         (self.get_pos_rot(), self.player.get_world())
                     {
                         unsafe {
-                            let light =
-                                LightContainer::new(LightType::PointLight(PointLight::new(
-                                            self.memory_pools.pointlight.read().unwrap(),
-                                            self.memory_pool_func,
-                                            pos,
-                                            rot,
-                                            world,
-                                )), self.id_track);
+                            let light = LightContainer::new(
+                                LightType::PointLight(PointLight::new(
+                                    self.memory_pools.pointlight.read().unwrap(),
+                                    self.memory_pool_func,
+                                    pos,
+                                    rot,
+                                    world,
+                                )),
+                                self.id_track,
+                            );
                             self.id_track += 1;
                             self.lights.push(light);
                         }
@@ -103,14 +107,16 @@ impl Context {
                         (self.get_pos_rot(), self.player.get_world())
                     {
                         unsafe {
-                            let light =
-                                LightContainer::new(LightType::SpotLight(SpotLight::new(
-                                            self.memory_pools.spotlight.read().unwrap(),
-                                            self.memory_pool_func,
-                                            pos,
-                                            rot,
-                                            world,
-                                )), self.id_track);
+                            let light = LightContainer::new(
+                                LightType::SpotLight(SpotLight::new(
+                                    self.memory_pools.spotlight.read().unwrap(),
+                                    self.memory_pool_func,
+                                    pos,
+                                    rot,
+                                    world,
+                                )),
+                                self.id_track,
+                            );
                             self.id_track += 1;
                             self.lights.push(light);
                         }
@@ -214,9 +220,7 @@ impl ImguiRenderLoop for Context {
             ui.set_mouse_cursor(Some(imgui::MouseCursor::Arrow));
             self.main_window(ui);
 
-            self.lights
-                .iter_mut()
-                .for_each(|lw| lw.render_window(ui));
+            self.lights.iter_mut().for_each(|lw| lw.render_window(ui));
         } else {
             ui.set_mouse_cursor(None);
         }
