@@ -11,6 +11,9 @@ pub struct Position {
     pub z: f32,
 }
 
+/// For this game, we actually don't care which values are in here since we'll only copy/clone
+/// those values from one struct to another, so this abstraction without any impl is more than
+/// enough.
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct RotationMatrix([f32; 4 * 3]);
@@ -23,19 +26,15 @@ pub struct LightSettings {
     pub brightness: f32,
 }
 
-unsafe impl Sync for LightEntity {}
-unsafe impl Send for LightEntity {}
-
-unsafe impl Send for LightContainer {}
-unsafe impl Sync for LightContainer {}
-
+/// CR4CameraDirector is the struct that contains the camera on all times, even on cinematics and
+/// when going on a horse, so this is the struct we'll get our fancy camera position.
+/// The way we get this camera is:
+/// CR4Player -> World -> CR4CameraDirector.
 #[lazy_re]
 #[repr(C, packed)]
 pub struct CR4CameraDirector {
     #[lazy_re(offset = 0x70)]
     pub pos: Position,
-
-    pub unk00: f32,
 
     #[lazy_re(offset = 0x1A0)]
     pub rot_matrix: RotationMatrix,
@@ -55,7 +54,10 @@ impl LightType {
     }
 }
 
-// This is the struct that *we* control
+/// This struct will contain the light pointer that's created inside the game's memory alongside
+/// with some external parameters we need for the UI/Control. We need to have an own copy of the
+/// color for imgui to work properly.
+/// Every LightContainer should have an unique id since imgui uses it as unique tokens.
 pub struct LightContainer {
     pub light: LightType,
 
@@ -77,6 +79,9 @@ impl LightContainer {
         }
     }
 
+    /// LightContainer::update_render needs to be called for every render loop to update all
+    /// parameters of the lights. We could technically optimize this to only be called when
+    /// something on imgui changes but we don't care for that right now.
     fn update_render(&mut self, world: usize) {
         match &mut self.light {
             LightType::SpotLight(l) => {
@@ -88,8 +93,8 @@ impl LightContainer {
         }
     }
 
-    // Soft remove the light from the game.
-    // We trust the MemoryPool to actually clean this pointer, we just disable its visibility.
+    /// Soft remove the light from the game.
+    /// We trust the MemoryPool to actually clean this pointer, we just disable its visibility.
     pub fn remove_light(mut self, world: usize) {
         self.light.get_light_mut().is_enabled = false;
         self.update_render(world);
@@ -204,28 +209,13 @@ impl LightContainer {
     }
 }
 
-#[lazy_re]
-#[repr(C, packed)]
-pub struct LightEntityVT {
-    // 44 * 0x8
-    #[lazy_re(offset = 352)]
-    pub get_parent: unsafe extern "C" fn(light: &LightEntity) -> &'static CLayer,
-    // set_flags also triggers a re-render of the light.
-    // 48 * 0x8
-    #[lazy_re(offset = 384)]
-    pub set_flags: unsafe extern "C" fn(light: &mut LightEntity, world: usize),
-}
-
-#[lazy_re]
-#[repr(C, packed)]
-pub struct CLayer {
-    #[lazy_re(offset = 0x68)]
-    pub world: usize,
-}
 
 // Dummy for the Entity.
 pub struct EmptyVT;
 
+/// Parent entity. Since lights and players are objects, they share this struct, and in here we
+/// also have the position and rotation of the object. Every object has its own virtual function
+/// table so we need to be generic in that member of the struct.
 #[lazy_re]
 #[repr(C, packed)]
 pub struct Entity<VT: 'static> {
@@ -244,6 +234,9 @@ pub struct Entity<VT: 'static> {
     pub pos: Position,
 }
 
+/// This differs with the lightentity for the CR4Player, it's useful to have it different to the
+/// lightentity mainly for the two pointers (ptr00 and ptr01) because from that we can extract the
+/// CR4CameraDirector from the CR4Player.
 #[lazy_re]
 #[repr(C, packed)]
 pub struct ScriptedEntity<VT: 'static> {
@@ -260,6 +253,15 @@ pub struct ScriptedEntity<VT: 'static> {
 
     #[lazy_re(offset = 0xA0)]
     pub pos: Position,
+}
+
+#[lazy_re]
+#[repr(C, packed)]
+pub struct LightEntityVT {
+    // set_flags also triggers a re-render of the light.
+    // 48 * 0x8
+    #[lazy_re(offset = 384)]
+    pub set_flags: unsafe extern "C" fn(light: &mut LightEntity, world: usize),
 }
 
 #[lazy_re]
@@ -379,6 +381,9 @@ impl PointLight {
 }
 
 impl LightEntity {
+    /// This is a hacky way to check when the game 'deleted' some light, since it somewhat 'garbage
+    /// collects' it, it also marks that specific field with the `0x22`, so we can check that flag
+    /// every render loop to delete light references that are incorrect.
     pub fn should_get_deleted(&self) -> bool {
         return (self.entity.flags & 0x22) != 0;
     }
@@ -387,18 +392,15 @@ impl LightEntity {
 unsafe impl Sync for MemoryPool {}
 unsafe impl Send for MemoryPool {}
 
+/// Most object in the game are created through a MemoryPool<T>, where T corresponds the actual
+/// object to be created. There's a global function that uses the MemoryPool pointer that adds an
+/// element of type T to the pool, so we need to keep track of two memory pools in this case:
+/// SpotLight and PointLight.
+/// Also, memory pools have a global pointer in the game where we get the pointer itself, so we can
+/// be sure MemoryPools are unique per T.
 #[lazy_re]
 #[repr(C, packed)]
-pub struct MemoryPool {
-    pub vt: *const MemoryPoolVT,
-}
-
-#[lazy_re]
-#[repr(C, packed)]
-pub struct MemoryPoolVT {
-    #[lazy_re(offset = 200)]
-    pub spawn_entity: unsafe extern "C" fn(memory_pool: &MemoryPool) -> &'static mut LightEntity,
-}
+pub struct MemoryPool {}
 
 pub type MemoryPoolFunc = unsafe extern "C" fn(
     memory_pool: &MemoryPool,
@@ -414,6 +416,9 @@ pub struct MainMemoryPools {
     pub pointlight: Pointer<MemoryPool>,
 }
 
+/// CR4Player has the pointer to the World, a struct we need for MemoryPool to create an object and
+/// to update the light's render since lights won't have any parent. From the world, we can also
+/// extract the CR4CameraDirector, where we get the position and rotation of the current camera.
 // TODO: rethink if this is the best way to abstract this, since it could lead to confusion.
 pub struct CR4Player(Pointer<ScriptedEntity<EmptyVT>>);
 
@@ -429,7 +434,6 @@ impl CR4Player {
         Some(world)
     }
 
-    // TODO: Remove this!
     pub fn get_camera(&self) -> Option<&'static CR4CameraDirector> {
         let layer = unsafe { self.0.read()?.ptr00? };
         let world = layer.ptr01?;
@@ -439,7 +443,6 @@ impl CR4Player {
         Some(camera_dir)
     }
 
-    // TODO: Check if this actually copies internal values.
     pub fn should_update(&self) -> bool {
         *self.0.should_update.lock().unwrap() || self.0.last_value.lock().unwrap().is_none()
     }

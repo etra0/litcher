@@ -125,17 +125,15 @@ impl Context {
 
                 ui.separator();
 
-                let world = self.player.get_world();
-                if world.is_none() {
+                let world = if let Some(world) = self.player.get_world() {
+                    world
+                } else {
                     return;
-                }
-
-                let world = world.unwrap();
+                };
 
                 let mut light_to_remove = None;
                 self.lights.iter_mut().enumerate().for_each(|(i, light)| {
                     let id = ui.push_id(&light.id);
-                    // TODO: maybe remove allocations from here, lol
                     if ui.button("X") {
                         light_to_remove = Some(i);
                     }
