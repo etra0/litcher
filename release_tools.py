@@ -27,7 +27,7 @@ def check_tag() -> None:
     # HACK: We explicitly check for the zip file because if there's a tag
     # there's an automatic release page.
     base_url = "https://github.com/etra0/litcher/releases/download/{}/the_litcher.zip"
-    current_ver = "v0.2.2"# get_version()
+    current_ver = get_version()
     final_url = base_url.format(current_ver)
     try:
         with urllib.request.urlopen(final_url) as req:
