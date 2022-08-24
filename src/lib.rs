@@ -5,11 +5,8 @@
 #![feature(once_cell)]
 
 use imgui::ColorEditFlags;
-use memory_rs::internal::{memory::resolve_module_path, process_info::ProcessInfo};
+use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
-
-use log::*;
-use simplelog::*;
 
 use hudhook::hooks::dx11::ImguiDX11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -30,7 +27,7 @@ struct Context {
     id_track: usize,
 }
 
-const VERSION: &'static str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
+const VERSION: &str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
 
 impl Context {
     fn new() -> Self {

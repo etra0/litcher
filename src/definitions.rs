@@ -385,7 +385,7 @@ impl LightEntity {
     /// collects' it, it also marks that specific field with the `0x22`, so we can check that flag
     /// every render loop to delete light references that are incorrect.
     pub fn should_get_deleted(&self) -> bool {
-        return (self.entity.flags & 0x22) != 0;
+        (self.entity.flags & 0x22) != 0
     }
 }
 

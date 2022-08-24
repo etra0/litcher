@@ -18,7 +18,7 @@ fn main() {
     println!("Path: {:?}", path);
     let path_string = path.to_string_lossy();
 
-    let dll_path = format!("{}\\litcher.dll", path_string).to_string();
+    let dll_path = format!("{}\\litcher.dll", path_string);
     println!("Path: {:?}", dll_path);
 
     inject_dll(&p, &dll_path);
