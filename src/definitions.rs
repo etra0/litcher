@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::pointer::*;
 use imgui::{Condition, Window};
 use lazy_re::lazy_re;
@@ -294,14 +296,13 @@ pub struct SpotLight {
 
 impl SpotLight {
     pub fn new(
-        memory_pool: &'static mut MemoryPool,
+        memory_pool: &'static mut MemoryPool<Self>,
         memory_pool_func: MemoryPoolFunc,
         position: Position,
         rot: RotationMatrix,
         world: usize,
     ) -> &'static mut Self {
-        let light_ptr: &'static mut Self =
-            unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
+        let light_ptr = memory_pool.new_light(memory_pool_func);
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -343,14 +344,13 @@ pub struct PointLight {
 
 impl PointLight {
     pub fn new(
-        memory_pool: &'static mut MemoryPool,
+        memory_pool: &'static mut MemoryPool<Self>,
         memory_pool_func: MemoryPoolFunc,
         position: Position,
         rot: RotationMatrix,
         world: usize,
     ) -> &'static mut Self {
-        let light_ptr: &'static mut Self =
-            unsafe { std::mem::transmute((memory_pool_func)(memory_pool, 0, 1, 0)) };
+        let light_ptr = memory_pool.new_light(memory_pool_func);
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -389,8 +389,9 @@ impl LightEntity {
     }
 }
 
-unsafe impl Sync for MemoryPool {}
-unsafe impl Send for MemoryPool {}
+pub trait LightTypeTrait {}
+impl LightTypeTrait for SpotLight {}
+impl LightTypeTrait for PointLight {}
 
 /// Most object in the game are created through a MemoryPool<T>, where T corresponds the actual
 /// object to be created. There's a global function that uses the MemoryPool pointer that adds an
@@ -400,10 +401,21 @@ unsafe impl Send for MemoryPool {}
 /// be sure MemoryPools are unique per T.
 #[lazy_re]
 #[repr(C, packed)]
-pub struct MemoryPool {}
+pub struct MemoryPool<T: LightTypeTrait> {
+    _marker: PhantomData<T>,
+}
+
+impl<T: LightTypeTrait> MemoryPool<T> {
+    pub fn new_light(&mut self, func: MemoryPoolFunc) -> &'static mut  T {
+        let light_ptr: &'static mut T = 
+            unsafe { std::mem::transmute((func)(self as *mut _ as *mut usize, 0, 1, 0)) };
+
+        return light_ptr;
+    }
+}
 
 pub type MemoryPoolFunc = unsafe extern "C" fn(
-    memory_pool: &MemoryPool,
+    memory_pool: *mut usize,
     unused: usize,
     marker: u8,
     light: usize,
@@ -412,8 +424,8 @@ pub type MemoryPoolFunc = unsafe extern "C" fn(
 // Since these are game constants, we can make sure that at least those pointers will live as long
 // as the game is running.
 pub struct MainMemoryPools {
-    pub spotlight: Pointer<MemoryPool>,
-    pub pointlight: Pointer<MemoryPool>,
+    pub spotlight: Pointer<MemoryPool<SpotLight>>,
+    pub pointlight: Pointer<MemoryPool<PointLight>>,
 }
 
 /// CR4Player has the pointer to the World, a struct we need for MemoryPool to create an object and
