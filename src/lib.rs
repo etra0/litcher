@@ -6,11 +6,11 @@
 
 use std::panic::PanicInfo;
 
+use anyhow::{Context, Result};
 use imgui::ColorEditFlags;
 use memory_rs::generate_aob_pattern;
 use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
-use anyhow::{Context, Result};
 
 use hudhook::hooks::dx11::ImguiDX11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -65,18 +65,41 @@ impl LitcherContext {
 
         let memory_pools = Self::find_memory_pools(&proc_info).unwrap();
 
-        // Another option:
-        // [$process + 0x2c5dd38]
-        // [0x1A8, 0x40] <= CR4Player
-        let player: Pointer<ScriptedEntity<EmptyVT>> = Pointer::new(
-            proc_info.region.start_address + 0x2c5dd38,
-            vec![0x1A8, 0x40],
-        );
+        let player: Pointer<ScriptedEntity<EmptyVT>> = {
+            let mp = generate_aob_pattern![
+                0x48, 0x8b, 0x0d, _, _, _, _, 0x48, 0x8b, 0x55, 0xc0, 0x48, 0x8b, 0x01, 0x48, 0x81,
+                0xc2, 0xa0, 0x00, 0x00, 0x00
+            ];
+
+            let instr = proc_info
+                .region
+                .scan_aob(&mp)
+                .context("Couldn't find Player entity")
+                .unwrap()
+                .unwrap();
+
+            let player_entity = unsafe { Self::read_from_mov(instr) };
+
+            Pointer::new(player_entity, vec![0x1A8, 0x40])
+        };
 
         let lights = Vec::new();
 
-        let memory_pool_func: MemoryPoolFunc =
-            unsafe { std::mem::transmute(proc_info.region.start_address + 0x03c400) };
+        let memory_pool_func: MemoryPoolFunc = {
+            let mp = generate_aob_pattern![
+                0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xec,
+                0x20, 0x49, 0x8b, 0xf1, 0x41, 0x0f, 0xb6, 0xd8, 0x48, 0x8b, 0xf9
+            ];
+
+            // TODO: Remove this ugly double unwrap.
+            let addr = proc_info
+                .region
+                .scan_aob(&mp)
+                .context("Couldn't find Memory Pool func")
+                .unwrap()
+                .unwrap();
+            unsafe { std::mem::transmute(addr) }
+        };
 
         Self {
             memory_pools,
@@ -88,57 +111,59 @@ impl LitcherContext {
         }
     }
 
-    /// Find the memory pools of the game doing pointer trickery.
-    /// Since they're global variables, there are more than one place where
-    /// they have references to it. We can safely assume those instructions
-    /// *will* exist in both GOG's and Steam's version, so we can avoid having
-    /// hardcoded offsets.
-    fn find_memory_pools(proc_inf: &ProcessInfo) -> Result<MainMemoryPools> {
-        let region = &proc_inf.region;
-        // Memory pattern for PointLightComponent memory pool
-        let mp = generate_aob_pattern![0x45, 0x32, 0xC9, 0x32, 0xD0, 0x80,
-        0xE2, 0x01, 0x32, 0xD1, 0x88, 0x93, 0x74, 0x01, 0x00, 0x00, 0x48, 0x8B,
-        0x05, _, _, _, _];
+    unsafe fn read_from_mov(addr: usize) -> usize {
+        let instruction_length = 7_usize;
 
-        // The right instruction is in 0x10 offset from what we find.
-        let instr = (region.scan_aob(&mp)?
-            .context("Couldn't find the PointLight Memory Pool")? + 0x10) as *const u8;
-
-        // Here we're supposed to do some trickery.
         // Basically, the `mov` instruction works with offsets, in this case,
         // we know the length of the mov instruction, which is 3 bytes and then
         // the offset. We need to skip the first three bytes, read that offset,
         // then add the instruction length itself because the offset is
         // calculated *after* the instruction is read.
         // Basically, (RIP + instr_length) + offset
-        let instruction_length = 7_usize;
-
-        // We read the offset from the instruction which is `mov rax, [addr]`
-        let offset = unsafe { *(instr.offset(3) as *const u32) } as usize;
+        let offset = *((addr + 0x3) as *const u32) as usize;
 
         // Finally, the *real* address would be
         //   instr + instruction_length + offset
-        let point_light_memorypool =
-            (instr as usize) + instruction_length + offset;
+        (addr + instruction_length) + offset
+    }
+
+    /// Find the memory pools of the game doing pointer trickery.
+    /// Since they're global variables, there are more than one place where
+    /// they have references to it. We can safely assume those instructions
+    /// *will* exist in both GOG's and Steam's version, so we can avoid having
+    /// hardcoded offsets.
+    fn find_memory_pools(proc_info: &ProcessInfo) -> Result<MainMemoryPools> {
+        let region = &proc_info.region;
+        // Memory pattern for PointLightComponent memory pool
+        let mp = generate_aob_pattern![
+            0x45, 0x32, 0xC9, 0x32, 0xD0, 0x80, 0xE2, 0x01, 0x32, 0xD1, 0x88, 0x93, 0x74, 0x01,
+            0x00, 0x00, 0x48, 0x8B, 0x05, _, _, _, _
+        ];
+
+        // The right instruction is in 0x10 offset from what we find.
+        let instr = region
+            .scan_aob(&mp)?
+            .context("Couldn't find the PointLight Memory Pool")?
+            + 0x10;
+
+        let point_light_memorypool = unsafe { Self::read_from_mov(instr) };
 
         // Now we try to find the SpotLightComponent
+        let mp = generate_aob_pattern![
+            0x0f, 0x84, 0x92, 0x00, 0x00, 0x00, 0x48, 0x8b, 0x1d, _, _, _, _, 0x48, 0x8d, 0x8c,
+            0x24, 0x30, 0x01, 0x00, 0x00
+        ];
 
-        let mp = generate_aob_pattern![0x0f, 0x84, 0x92, 0x00, 0x00, 0x00,
-        0x48, 0x8b, 0x1d, _, _, _, _, 0x48, 0x8d, 0x8c, 0x24, 0x30, 0x01, 0x00,
-        0x00];
+        let instr = region
+            .scan_aob(&mp)?
+            .context("Couldn't find SpotLightComponent Memory Pool")?
+            + 0x6;
 
-        let instr = (region.scan_aob(&mp)?
-            .context("Couldn't find SpotLightComponent Memory Pool")? + 0x6) as *const u8;
-
-        let instruction_length = 7_usize;
-
-        let offset = unsafe { *(instr.offset(3) as *const u32) } as usize;
-
-        let spot_light_memorypool = (instr as usize) + instruction_length + offset;
+        let spot_light_memorypool = unsafe { Self::read_from_mov(instr) };
 
         Ok(MainMemoryPools {
             spotlight: Pointer::new(spot_light_memorypool, Vec::new()),
-            pointlight: Pointer::new(point_light_memorypool, Vec::new())
+            pointlight: Pointer::new(point_light_memorypool, Vec::new()),
         })
     }
 
