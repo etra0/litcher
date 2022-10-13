@@ -143,7 +143,11 @@ impl LightContainer {
 
                 imgui::Drag::new("Brightness")
                     .range(0.1, 100000.0)
-                    .speed(if ui.is_key_index_down(VK_CONTROL as _) { 20.0 } else { 1.0 })
+                    .speed(if ui.is_key_index_down(VK_CONTROL as _) {
+                        20.0
+                    } else {
+                        1.0
+                    })
                     .build(ui, &mut brightness);
 
                 imgui::Slider::new("Radius", f32::MIN, f32::MAX)
@@ -210,7 +214,6 @@ impl LightContainer {
             });
     }
 }
-
 
 // Dummy for the Entity.
 pub struct EmptyVT;
@@ -406,8 +409,8 @@ pub struct MemoryPool<T: LightTypeTrait> {
 }
 
 impl<T: LightTypeTrait> MemoryPool<T> {
-    pub fn new_light(&mut self, func: MemoryPoolFunc) -> &'static mut  T {
-        let light_ptr: &'static mut T = 
+    pub fn new_light(&mut self, func: MemoryPoolFunc) -> &'static mut T {
+        let light_ptr: &'static mut T =
             unsafe { std::mem::transmute((func)(self as *mut _ as *mut usize, 0, 1, 0)) };
 
         return light_ptr;

@@ -23,6 +23,7 @@ imgui-dx11 = { path = "./vendor/hudhook/imgui-dx11/" }
 imgui-dx12 = { path = "./vendor/hudhook/imgui-dx12/" }
 imgui = "0.8.2"
 lazy-re = "0.1.1"
+anyhow = "1.0.65"
 
 [lib]
 crate-type = ["cdylib"]

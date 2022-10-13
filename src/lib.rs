@@ -4,9 +4,13 @@
 //! Offset of the CR4Player Memory Pool: [$process + 2d56848]
 #![feature(once_cell)]
 
+use std::panic::PanicInfo;
+
 use imgui::ColorEditFlags;
+use memory_rs::generate_aob_pattern;
 use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+use anyhow::{Context, Result};
 
 use hudhook::hooks::dx11::ImguiDX11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -17,8 +21,9 @@ mod pointer;
 
 use definitions::*;
 use pointer::*;
+use windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxA;
 
-struct Context {
+struct LitcherContext {
     memory_pools: MainMemoryPools,
     lights: Vec<LightContainer>,
     show: bool,
@@ -29,9 +34,28 @@ struct Context {
 
 const VERSION: &str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
 
-impl Context {
+fn panic(info: &PanicInfo) {
+    let msg = format!(
+        "Something went super wrong.\n\n\
+        Please post the log created alongside witcher3.exe on a github issue in \
+        https://github.com/etra0/litcher.\n\
+        We got a panic with the following information:\n\n\
+        {:#?}\n\
+        It is suggested to restart the game since anything can happen anyway.\n\
+        This is totally unexpected behavior for the creator.
+        \0",
+        info
+    );
+    unsafe { MessageBoxA(0, msg.as_ptr(), "The Litcher\0".as_ptr(), 0) };
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1000));
+    }
+}
+
+impl LitcherContext {
     fn new() -> Self {
         println!("Initializing");
+        std::panic::set_hook(Box::new(panic));
 
         if cfg!(debug_assertions) {
             hudhook::utils::alloc_console();
@@ -39,10 +63,7 @@ impl Context {
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
 
-        let memory_pools = MainMemoryPools {
-            pointlight: Pointer::new(proc_info.region.start_address + 0x2c46878, Vec::new()),
-            spotlight: Pointer::new(proc_info.region.start_address + 0x2c46900, Vec::new()),
-        };
+        let memory_pools = Self::find_memory_pools(&proc_info).unwrap();
 
         // Another option:
         // [$process + 0x2c5dd38]
@@ -65,6 +86,60 @@ impl Context {
             memory_pool_func,
             id_track: 0,
         }
+    }
+
+    /// Find the memory pools of the game doing pointer trickery.
+    /// Since they're global variables, there are more than one place where
+    /// they have references to it. We can safely assume those instructions
+    /// *will* exist in both GOG's and Steam's version, so we can avoid having
+    /// hardcoded offsets.
+    fn find_memory_pools(proc_inf: &ProcessInfo) -> Result<MainMemoryPools> {
+        let region = &proc_inf.region;
+        // Memory pattern for PointLightComponent memory pool
+        let mp = generate_aob_pattern![0x45, 0x32, 0xC9, 0x32, 0xD0, 0x80,
+        0xE2, 0x01, 0x32, 0xD1, 0x88, 0x93, 0x74, 0x01, 0x00, 0x00, 0x48, 0x8B,
+        0x05, _, _, _, _];
+
+        // The right instruction is in 0x10 offset from what we find.
+        let instr = (region.scan_aob(&mp)?
+            .context("Couldn't find the PointLight Memory Pool")? + 0x10) as *const u8;
+
+        // Here we're supposed to do some trickery.
+        // Basically, the `mov` instruction works with offsets, in this case,
+        // we know the length of the mov instruction, which is 3 bytes and then
+        // the offset. We need to skip the first three bytes, read that offset,
+        // then add the instruction length itself because the offset is
+        // calculated *after* the instruction is read.
+        // Basically, (RIP + instr_length) + offset
+        let instruction_length = 7_usize;
+
+        // We read the offset from the instruction which is `mov rax, [addr]`
+        let offset = unsafe { *(instr.offset(3) as *const u32) } as usize;
+
+        // Finally, the *real* address would be
+        //   instr + instruction_length + offset
+        let point_light_memorypool =
+            (instr as usize) + instruction_length + offset;
+
+        // Now we try to find the SpotLightComponent
+
+        let mp = generate_aob_pattern![0x0f, 0x84, 0x92, 0x00, 0x00, 0x00,
+        0x48, 0x8b, 0x1d, _, _, _, _, 0x48, 0x8d, 0x8c, 0x24, 0x30, 0x01, 0x00,
+        0x00];
+
+        let instr = (region.scan_aob(&mp)?
+            .context("Couldn't find SpotLightComponent Memory Pool")? + 0x6) as *const u8;
+
+        let instruction_length = 7_usize;
+
+        let offset = unsafe { *(instr.offset(3) as *const u32) } as usize;
+
+        let spot_light_memorypool = (instr as usize) + instruction_length + offset;
+
+        Ok(MainMemoryPools {
+            spotlight: Pointer::new(spot_light_memorypool, Vec::new()),
+            pointlight: Pointer::new(point_light_memorypool, Vec::new())
+        })
     }
 
     pub fn get_pos_rot(&self) -> Option<(Position, RotationMatrix)> {
@@ -164,7 +239,7 @@ impl Context {
     }
 }
 
-impl ImguiRenderLoop for Context {
+impl ImguiRenderLoop for LitcherContext {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
         // Force a read every render to avoid crashes.
         let _world = self.player.get_world();
@@ -243,4 +318,4 @@ impl ImguiRenderLoop for Context {
     }
 }
 
-hudhook::hudhook!(Context::new().into_hook::<ImguiDX11Hooks>());
+hudhook::hudhook!(LitcherContext::new().into_hook::<ImguiDX11Hooks>());
