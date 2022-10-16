@@ -26,6 +26,7 @@ pub struct LightSettings {
     pub color: Color,
     pub radius: f32,
     pub brightness: f32,
+    pub attenuation: f32,
 }
 
 /// CR4CameraDirector is the struct that contains the camera on all times, even on cinematics and
@@ -135,8 +136,11 @@ impl LightContainer {
 
                 let mut brightness = light.light_settings.brightness;
                 let mut radius = light.light_settings.radius;
+                let mut attenuation = light.light_settings.attenuation;
                 let mut casting_mode = light.shadow_casting_mode as usize;
                 let mut position: [f32; 3] = light.entity.pos.into();
+                let mut shadow_blend_factor = light.shadow_blend_factor;
+
                 imgui::InputFloat3::new(ui, "Position", &mut position)
                     .no_horizontal_scroll(false)
                     .build();
@@ -154,6 +158,14 @@ impl LightContainer {
                     .range(0.1, 180.0)
                     .build(ui, &mut radius);
 
+                imgui::Slider::new("Shadow blend", f32::MIN, f32::MAX)
+                    .range(0.0001, 1.0)
+                    .build(ui, &mut shadow_blend_factor);
+
+                imgui::Slider::new("Attenuation", f32::MIN, f32::MAX)
+                    .range(0.0001, 1.0)
+                    .build(ui, &mut attenuation);
+
                 const SHADOWS_OPTIONS: [&str; 3] = [
                     "0 - No shadows",
                     "1 - Characters and objects",
@@ -169,7 +181,9 @@ impl LightContainer {
                 light.entity.pos = position.into();
                 light.light_settings.brightness = brightness;
                 light.light_settings.radius = radius;
+                light.light_settings.attenuation = attenuation;
                 light.shadow_casting_mode = casting_mode as _;
+                light.shadow_blend_factor = shadow_blend_factor;
 
                 ui.separator();
 
@@ -280,9 +294,10 @@ pub struct LightEntity {
     #[lazy_re(offset = 0x164)]
     pub is_enabled: bool,
 
-    #[lazy_re(offset = 0x170)]
+    #[lazy_re(offset = 0x16C)]
+    pub shadow_blend_factor: f32,
     pub shadow_casting_mode: u32,
-    pub shadow_fade_distance: u32,
+    pub shadow_fade_distance: f32,
     pub shadow_fade_range: f32,
 }
 
