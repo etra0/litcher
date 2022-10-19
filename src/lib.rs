@@ -14,7 +14,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
 use hudhook::hooks::dx11::ImguiDX11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui_dx11::imgui::{Condition, Window};
+use imgui::{Condition, Window};
 
 mod definitions;
 mod pointer;
@@ -265,7 +265,7 @@ impl LitcherContext {
 }
 
 impl ImguiRenderLoop for LitcherContext {
-    fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags) {
+    fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
         // Force a read every render to avoid crashes.
         let _world = self.player.get_world();
         if _world.is_none() {
