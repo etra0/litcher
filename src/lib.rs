@@ -12,7 +12,7 @@ use memory_rs::generate_aob_pattern;
 use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
-use hudhook::hooks::dx11::ImguiDX11Hooks;
+use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 
@@ -28,7 +28,6 @@ struct LitcherContext {
     lights: Vec<LightContainer>,
     show: bool,
     player: CR4Player,
-    memory_pool_func: MemoryPoolFunc,
     id_track: usize,
 }
 
@@ -67,8 +66,7 @@ impl LitcherContext {
 
         let player: Pointer<ScriptedEntity<EmptyVT>> = {
             let mp = generate_aob_pattern![
-                0x48, 0x8b, 0x0d, _, _, _, _, 0x48, 0x8b, 0x55, 0xc0, 0x48, 0x8b, 0x01, 0x48, 0x81,
-                0xc2, 0xa0, 0x00, 0x00, 0x00
+                0xBA, 0x10, 0x00, 0x00, 0x00, 0x48, 0x89, 0x9C, 0x24, 0xB0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x1D
             ];
 
             let instr = proc_info
@@ -76,7 +74,7 @@ impl LitcherContext {
                 .scan_aob(&mp)
                 .context("Couldn't find Player entity")
                 .unwrap()
-                .unwrap();
+                .unwrap() + 13;
 
             let player_entity = unsafe { Self::read_from_mov(instr) };
 
@@ -85,28 +83,11 @@ impl LitcherContext {
 
         let lights = Vec::new();
 
-        let memory_pool_func: MemoryPoolFunc = {
-            let mp = generate_aob_pattern![
-                0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xec,
-                0x20, 0x49, 0x8b, 0xf1, 0x41, 0x0f, 0xb6, 0xd8, 0x48, 0x8b, 0xf9
-            ];
-
-            // TODO: Remove this ugly double unwrap.
-            let addr = proc_info
-                .region
-                .scan_aob(&mp)
-                .context("Couldn't find Memory Pool func")
-                .unwrap()
-                .unwrap();
-            unsafe { std::mem::transmute(addr) }
-        };
-
         Self {
             memory_pools,
             lights,
             show: true,
             player: CR4Player::new(player),
-            memory_pool_func,
             id_track: 0,
         }
     }
@@ -134,30 +115,31 @@ impl LitcherContext {
     /// hardcoded offsets.
     fn find_memory_pools(proc_info: &ProcessInfo) -> Result<MainMemoryPools> {
         let region = &proc_info.region;
-        // Memory pattern for PointLightComponent memory pool
+        // Memory pattern for PointLightComponent memory pool.
+        // NOTE: One easy trick to find them is to look at what references are for the Builder
+        // class, from that you can find the refernece to the Memory Pool then build an AOB from a
+        // function.
         let mp = generate_aob_pattern![
-            0x45, 0x32, 0xC9, 0x32, 0xD0, 0x80, 0xE2, 0x01, 0x32, 0xD1, 0x88, 0x93, 0x74, 0x01,
-            0x00, 0x00, 0x48, 0x8B, 0x05, _, _, _, _
+            0x0F, 0x11, 0x83, 0x08, 0x02, 0x00, 0x00, 0x4C, 0x8B, 0x07, 0x4D, 0x85, 0xC0, 0x74, 0x2A, 0x48, 0x8B, 0x0D
         ];
 
         // The right instruction is in 0x10 offset from what we find.
         let instr = region
             .scan_aob(&mp)?
             .context("Couldn't find the PointLight Memory Pool")?
-            + 0x10;
+            + 15;
 
         let point_light_memorypool = unsafe { Self::read_from_mov(instr) };
 
         // Now we try to find the SpotLightComponent
         let mp = generate_aob_pattern![
-            0x0f, 0x84, 0x92, 0x00, 0x00, 0x00, 0x48, 0x8b, 0x1d, _, _, _, _, 0x48, 0x8d, 0x8c,
-            0x24, 0x30, 0x01, 0x00, 0x00
+            0x32, 0xC2, 0x88, 0x87, 0xB4, 0x01, 0x00, 0x00, 0xEB, _, 0x48, 0x8B, 0x05
         ];
 
         let instr = region
             .scan_aob(&mp)?
             .context("Couldn't find SpotLightComponent Memory Pool")?
-            + 0x6;
+            + 10;
 
         let spot_light_memorypool = unsafe { Self::read_from_mov(instr) };
 
@@ -186,7 +168,6 @@ impl LitcherContext {
                             let light = LightContainer::new(
                                 LightType::PointLight(PointLight::new(
                                     self.memory_pools.pointlight.read().unwrap(),
-                                    self.memory_pool_func,
                                     pos,
                                     rot,
                                     world,
@@ -207,7 +188,6 @@ impl LitcherContext {
                             let light = LightContainer::new(
                                 LightType::SpotLight(SpotLight::new(
                                     self.memory_pools.spotlight.read().unwrap(),
-                                    self.memory_pool_func,
                                     pos,
                                     rot,
                                     world,
@@ -343,4 +323,4 @@ impl ImguiRenderLoop for LitcherContext {
     }
 }
 
-hudhook::hudhook!(LitcherContext::new().into_hook::<ImguiDX11Hooks>());
+hudhook::hudhook!(LitcherContext::new().into_hook::<ImguiDx12Hooks>());

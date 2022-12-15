@@ -315,12 +315,11 @@ pub struct SpotLight {
 impl SpotLight {
     pub fn new(
         memory_pool: &'static mut MemoryPool<Self>,
-        memory_pool_func: MemoryPoolFunc,
         position: Position,
         rot: RotationMatrix,
         world: usize,
     ) -> &'static mut Self {
-        let light_ptr = memory_pool.new_light(memory_pool_func);
+        let light_ptr = memory_pool.new_light();
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -363,12 +362,11 @@ pub struct PointLight {
 impl PointLight {
     pub fn new(
         memory_pool: &'static mut MemoryPool<Self>,
-        memory_pool_func: MemoryPoolFunc,
         position: Position,
         rot: RotationMatrix,
         world: usize,
     ) -> &'static mut Self {
-        let light_ptr = memory_pool.new_light(memory_pool_func);
+        let light_ptr = memory_pool.new_light();
 
         light_ptr.light.entity.pos = position;
         light_ptr.light.entity.rot_matrix = rot;
@@ -420,15 +418,15 @@ impl LightTypeTrait for PointLight {}
 #[lazy_re]
 #[repr(C, packed)]
 pub struct MemoryPool<T: LightTypeTrait> {
+    vt: &'static [usize; 28],
     _marker: PhantomData<T>,
 }
 
 impl<T: LightTypeTrait> MemoryPool<T> {
-    pub fn new_light(&mut self, func: MemoryPoolFunc) -> &'static mut T {
-        let light_ptr: &'static mut T =
-            unsafe { std::mem::transmute((func)(self as *mut _ as *mut usize, 0, 1, 0)) };
-
-        return light_ptr;
+    pub fn new_light(&mut self) -> &'static mut T {
+        let actual_function: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T = unsafe { std::mem::transmute(self.vt[25]) };
+        let result = unsafe { (actual_function)(self as _) };
+        result
     }
 }
 
