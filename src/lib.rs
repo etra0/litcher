@@ -132,6 +132,7 @@ impl LitcherContext {
             + 0x10;
 
         let point_light_memorypool = unsafe { Self::read_from_mov(instr) };
+        println!("PointLight memorypool: {:x}", point_light_memorypool);
 
         // Now we try to find the SpotLightComponent
         let mp = generate_aob_pattern![
@@ -145,6 +146,7 @@ impl LitcherContext {
             + 0x6;
 
         let spot_light_memorypool = unsafe { Self::read_from_mov(instr) };
+        println!("SpotLight memorypool: {:x}", spot_light_memorypool);
 
         Ok(MainMemoryPools {
             spotlight: Pointer::new(spot_light_memorypool, Vec::new()),
