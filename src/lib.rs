@@ -13,15 +13,18 @@ use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
+use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 
 mod definitions;
 mod pointer;
+mod detect_api;
 
 use definitions::*;
 use pointer::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxA;
+use detect_api::*;
 
 struct LitcherContext {
     memory_pools: MainMemoryPools,
@@ -325,4 +328,34 @@ impl ImguiRenderLoop for LitcherContext {
     }
 }
 
-hudhook::hudhook!(LitcherContext::new().into_hook::<ImguiDx12Hooks>());
+use hudhook::log::*;
+use hudhook::reexports::*;
+use hudhook::*;
+
+/// Entry point created by the `hudhook` library.
+#[no_mangle]
+pub unsafe extern "stdcall" fn DllMain(
+    hmodule: HINSTANCE,
+    reason: u32,
+    _: *mut std::ffi::c_void,
+) {
+    if reason == DLL_PROCESS_ATTACH {
+        hudhook::lifecycle::global_state::set_module(hmodule);
+
+        trace!("DllMain()");
+        std::thread::spawn(move || {
+            let hooks: Box<dyn hooks::Hooks> = { 
+                match detect_api() {
+                    RenderingAPI::Dx11 => {
+                        LitcherContext::new().into_hook::<ImguiDx11Hooks>()
+                    }
+                    RenderingAPI::Dx12 => {
+                        LitcherContext::new().into_hook::<ImguiDx12Hooks>()
+                    }
+                }
+            };
+            hooks.hook();
+            hudhook::lifecycle::global_state::set_hooks(hooks);
+        });
+    }
+}
