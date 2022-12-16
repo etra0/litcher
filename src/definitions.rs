@@ -433,13 +433,6 @@ impl<T: LightTypeTrait> MemoryPool<T> {
     }
 }
 
-pub type MemoryPoolFunc = unsafe extern "C" fn(
-    memory_pool: *mut usize,
-    unused: usize,
-    marker: u8,
-    light: usize,
-) -> &'static mut LightEntity;
-
 // Since these are game constants, we can make sure that at least those pointers will live as long
 // as the game is running.
 pub struct MainMemoryPools {
