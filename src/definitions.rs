@@ -188,42 +188,8 @@ impl LightContainer {
                 ui.separator();
 
                 match &mut self.light {
-                    LightType::PointLight(pl) => {
-                        ui.text("Pointlight specific");
-                        let mut cache_static_shadows: bool = pl.cache_static_shadows != 0;
-                        let mut dynamic_shadow_face_mask: bool = pl.dynamic_shadow_face_mask != 0;
-
-                        ui.checkbox("Cache static shadows", &mut cache_static_shadows);
-                        ui.checkbox("Dynamic Shadow Face Mask", &mut dynamic_shadow_face_mask);
-
-                        pl.cache_static_shadows = cache_static_shadows as _;
-                        pl.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8) * 0x3F;
-                    }
-                    LightType::SpotLight(spl) => {
-                        ui.text("Spotlight specific");
-                        let mut inner_angle = spl.inner_angle;
-                        let mut outer_angle = spl.outer_angle;
-                        let mut softness = spl.softness;
-
-                        imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
-                            .range(0.1, outer_angle - 1.0)
-                            .build(ui, &mut inner_angle);
-
-                        imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
-                            .range(0.1, 180.0)
-                            .build(ui, &mut outer_angle);
-
-                        imgui::Slider::new("Softness", f32::MIN, f32::MAX)
-                            .range(0.1, 100.0)
-                            .build(ui, &mut softness);
-
-                        spl.outer_angle = outer_angle;
-                        spl.inner_angle = inner_angle;
-                        if spl.outer_angle < spl.inner_angle {
-                            spl.inner_angle = spl.outer_angle - 1.;
-                        }
-                        spl.softness = softness;
-                    }
+                    LightType::PointLight(pl) => pl.render_ui(ui),
+                    LightType::SpotLight(spl) => spl.render_ui(ui),
                 };
             });
     }
@@ -344,6 +310,32 @@ impl SpotLight {
         self.light.entity.rot_matrix = rot;
     }
 
+    pub fn render_ui(&mut self, ui: &imgui::Ui) {
+        ui.text("Spotlight specific");
+        let mut inner_angle = self.inner_angle;
+        let mut outer_angle = self.outer_angle;
+        let mut softness = self.softness;
+
+        imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
+            .range(0.1, outer_angle - 1.0)
+            .build(ui, &mut inner_angle);
+
+        imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
+            .range(0.1, 180.0)
+            .build(ui, &mut outer_angle);
+
+        imgui::Slider::new("Softness", f32::MIN, f32::MAX)
+            .range(0.1, 100.0)
+            .build(ui, &mut softness);
+
+        self.outer_angle = outer_angle;
+        self.inner_angle = inner_angle;
+        if self.outer_angle < self.inner_angle {
+            self.inner_angle = self.outer_angle - 1.;
+        }
+        self.softness = softness;
+}
+
     pub fn update_render(&mut self, world: usize) {
         unsafe { (self.light.entity.vt.set_flags)(&mut self.light, world) };
     }
@@ -389,6 +381,18 @@ impl PointLight {
     pub fn set_pos_rot(&mut self, pos: Position, rot: RotationMatrix) {
         self.light.entity.pos = pos;
         self.light.entity.rot_matrix = rot;
+    }
+
+    pub fn render_ui(&mut self, ui: &imgui::Ui) {
+        ui.text("Pointlight specific");
+        let mut cache_static_shadows: bool = self.cache_static_shadows != 0;
+        let mut dynamic_shadow_face_mask: bool = self.dynamic_shadow_face_mask != 0;
+
+        ui.checkbox("Cache static shadows", &mut cache_static_shadows);
+        ui.checkbox("Dynamic Shadow Face Mask", &mut dynamic_shadow_face_mask);
+
+        self.cache_static_shadows = cache_static_shadows as _;
+        self.dynamic_shadow_face_mask = (dynamic_shadow_face_mask as u8) * 0x3F;
     }
 
     pub fn update_render(&mut self, world: usize) {
