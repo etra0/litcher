@@ -245,6 +245,22 @@ impl LitcherContext {
                     let light = self.lights.remove(ix);
                     light.remove_light(world);
                 }
+
+                if self.lights.len() == 0 {
+                    return;
+                }
+
+                ui.separator();
+
+                if ui.button("Delete all lights") {
+                    if let Some(world) = self.player.get_world() {
+                        self.lights.drain(..).for_each(|light| {
+                            light.remove_light(world);
+                        });
+                        self.player.updated();
+                    }
+                }
+
             });
     }
 }
@@ -276,16 +292,6 @@ impl ImguiRenderLoop for LitcherContext {
 
         if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
             hudhook::lifecycle::eject();
-        }
-
-        if ui.is_key_index_pressed_no_repeat(VK_F5 as _) {
-            // Before we do the clear, let's just deactivate all the current lights.
-            if let Some(world) = self.player.get_world() {
-                self.lights.drain(..).for_each(|light| {
-                    light.remove_light(world);
-                });
-                self.player.updated();
-            }
         }
 
         self.lights.retain(|x: &LightContainer| {
