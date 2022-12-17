@@ -409,6 +409,14 @@ pub trait LightTypeTrait {}
 impl LightTypeTrait for SpotLight {}
 impl LightTypeTrait for PointLight {}
 
+#[lazy_re]
+#[repr(C, packed)]
+struct MemoryPoolVT<T: LightTypeTrait + 'static> {
+    // 25 * 0x8
+    #[lazy_re(offset = 200)] 
+    spawn_object: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T
+}
+
 /// Most object in the game are created through a MemoryPool<T>, where T corresponds the actual
 /// object to be created. There's a global function that uses the MemoryPool pointer that adds an
 /// element of type T to the pool, so we need to keep track of two memory pools in this case:
@@ -417,8 +425,8 @@ impl LightTypeTrait for PointLight {}
 /// be sure MemoryPools are unique per T.
 #[lazy_re]
 #[repr(C, packed)]
-pub struct MemoryPool<T: LightTypeTrait> {
-    vt: &'static [usize; 28],
+pub struct MemoryPool<T: LightTypeTrait + 'static> {
+    vt: &'static MemoryPoolVT<T>,
     #[lazy_re(offset = 0x110)]
     clean_this: usize,
     _marker: PhantomData<T>,
@@ -426,8 +434,7 @@ pub struct MemoryPool<T: LightTypeTrait> {
 
 impl<T: LightTypeTrait> MemoryPool<T> {
     pub fn new_light(&mut self) -> &'static mut T {
-        let actual_function: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T = unsafe { std::mem::transmute(self.vt[25]) };
-        let result = unsafe { (actual_function)(self as _) };
+        let result = unsafe { (self.vt.spawn_object)(self as _) };
         self.clean_this = 0;
         result
     }
