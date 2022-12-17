@@ -1,8 +1,10 @@
-<img
+<p align="center">
+ <img
   src="https://raw.githubusercontent.com/etra0/litcher/master/assets/logo.png"
   alt="The Litcher"
   title="The Litcher"
   style="display: inline-block; margin: 0 auto; width: 30%">
+</p>
 
 # The Litcher
 **If you enjoyed this tool, consider supporting me @**
