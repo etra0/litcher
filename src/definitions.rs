@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::pointer::*;
 use imgui::{Condition, Window};
 use lazy_re::lazy_re;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CONTROL;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
@@ -147,7 +147,7 @@ impl LightContainer {
 
                 imgui::Drag::new("Brightness")
                     .range(0.1, 100000.0)
-                    .speed(if ui.is_key_index_down(VK_CONTROL as _) {
+                    .speed(if ui.is_key_index_down(VK_SHIFT as _) {
                         20.0
                     } else {
                         1.0
