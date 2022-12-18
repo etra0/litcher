@@ -269,6 +269,10 @@ impl LitcherContext {
 }
 
 impl ImguiRenderLoop for LitcherContext {
+    fn initialize(&mut self, ctx: &mut imgui::Context) {
+        let mut io = ctx.io_mut();
+        io.font_allow_user_scaling = true;
+    }
     fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
         // Force a read every render to avoid crashes.
         let _world = self.player.get_world();
