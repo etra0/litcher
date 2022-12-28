@@ -298,6 +298,7 @@ impl ImguiRenderLoop for LitcherContext {
         }
 
         if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
+            hudhook::utils::free_console();
             hudhook::lifecycle::eject();
         }
 
