@@ -141,9 +141,10 @@ impl LightContainer {
                 let mut position: [f32; 3] = light.entity.pos.into();
                 let mut shadow_blend_factor = light.shadow_blend_factor;
 
-                imgui::InputFloat3::new(ui, "Position", &mut position)
-                    .no_horizontal_scroll(false)
-                    .build();
+                imgui::Drag::new("Position")
+                    .range(f32::MIN, f32::MAX)
+                    .speed(0.1)
+                    .build_array(ui, &mut position);
 
                 imgui::Drag::new("Brightness")
                     .range(0.1, 100000.0)
