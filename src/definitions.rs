@@ -85,7 +85,7 @@ impl LightContainer {
     /// LightContainer::update_render needs to be called for every render loop to update all
     /// parameters of the lights. We could technically optimize this to only be called when
     /// something on imgui changes but we don't care for that right now.
-    fn update_render(&mut self, world: usize) {
+    pub fn update_render(&mut self, world: usize) {
         match &mut self.light {
             LightType::SpotLight(l) => {
                 l.update_render(world);
@@ -100,12 +100,6 @@ impl LightContainer {
     /// We trust the MemoryPool to actually clean this pointer, we just disable its visibility.
     pub fn remove_light(mut self, world: usize) {
         self.light.get_light_mut().is_enabled = false;
-        self.update_render(world);
-    }
-
-    pub fn toggle(&mut self, world: usize) {
-        let light = self.light.get_light_mut();
-        light.is_enabled = !light.is_enabled;
         self.update_render(world);
     }
 

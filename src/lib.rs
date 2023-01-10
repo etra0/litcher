@@ -230,8 +230,10 @@ impl LitcherContext {
                         light.open = true;
                     }
                     ui.same_line();
-                    if ui.button("Toggle on/off") {
-                        light.toggle(world);
+
+                    let inner_light = light.light.get_light_mut();
+                    if ui.checkbox("on/off", &mut inner_light.is_enabled) {
+                        light.update_render(world);
                     }
 
                     ui.same_line();
