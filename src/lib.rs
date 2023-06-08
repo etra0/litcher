@@ -48,7 +48,7 @@ fn panic(info: &PanicInfo) {
         \0",
         info
     );
-    unsafe { MessageBoxA(0, msg.as_ptr(), "The Litcher\0".as_ptr(), 0) };
+    unsafe { MessageBoxA(0, msg.as_ptr(), format!("The Litcher {}\0", env!("CARGO_PKG_VERSION")).as_ptr(), 0) };
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1000));
     }
