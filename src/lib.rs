@@ -65,23 +65,15 @@ impl LitcherContext {
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
 
-        let memory_pools = Self::find_memory_pools(&proc_info).unwrap();
+        let initial_table_ptr = Self::find_initial_table_value(&proc_info).unwrap();
+        let memory_pools = MainMemoryPools {
+            spotlight: Pointer::new(initial_table_ptr + 0x1990, Vec::new()),
+            pointlight: Pointer::new(initial_table_ptr + 0x1998, Vec::new()),
+        };
 
         let player: Pointer<ScriptedEntity<EmptyVT>> = {
-            let mp = generate_aob_pattern![
-                0xBA, 0x10, 0x00, 0x00, 0x00, 0x48, 0x89, 0x9C, 0x24, 0xB0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x1D
-            ];
-
-            let instr = proc_info
-                .region
-                .scan_aob(&mp)
-                .context("Couldn't find Player entity")
-                .unwrap()
-                .unwrap() + 13;
-
-            let player_entity = unsafe { Self::read_from_mov(instr) };
-
-            Pointer::new(player_entity, vec![0x1A8, 0x40])
+            // This is being dragged from CR4Game > CCustomCamera > CR4Player.
+            Pointer::new(initial_table_ptr + 0x100, vec![0x1A8, 0x40])
         };
 
         let lights = Vec::new();
@@ -111,47 +103,29 @@ impl LitcherContext {
         (addr + instruction_length) + offset
     }
 
-    /// Find the memory pools of the game doing pointer trickery.
-    /// Since they're global variables, there are more than one place where
-    /// they have references to it. We can safely assume those instructions
-    /// *will* exist in both GOG's and Steam's version, so we can avoid having
-    /// hardcoded offsets.
-    fn find_memory_pools(proc_info: &ProcessInfo) -> Result<MainMemoryPools> {
+    /// All the memory pools are nearby set in an initial table. In this function, we find the
+    /// first member of said table, so later we can offset to get the memorypools and the player
+    /// offset.
+    fn find_initial_table_value(proc_info: &ProcessInfo) -> Result<usize> {
         let region = &proc_info.region;
-        // Memory pattern for PointLightComponent memory pool.
-        // NOTE: One easy trick to find them is to look at what references are for the Builder
-        // class, from that you can find the refernece to the Memory Pool then build an AOB from a
-        // function.
+        // NOTE: An easy trick to find them, is to find the initial table and offset from that.
+        // There's an useful offset you can look for which looks rather unique: 0x10078. Find a
+        // mov/lea instruction that uses that offset and you might find the initial value to the
+        // table a couple of bytes behind.
         let mp = generate_aob_pattern![
-            0x0F, 0x11, 0x83, 0x08, 0x02, 0x00, 0x00, 0x4C, 0x8B, 0x07, 0x4D, 0x85, 0xC0, 0x74, 0x2A, 0x48, 0x8B, 0x0D
+            0x4C, 0x8D, 0xB7, 0x78, 0x00, 0x01, 0x00, 0x49, 0x8B, 0xCE
         ];
 
         // The right instruction is in 0x10 offset from what we find.
         let instr = region
             .scan_aob(&mp)?
             .context("Couldn't find the PointLight Memory Pool")?
-            + 15;
+            - 7;
 
-        let point_light_memorypool = unsafe { Self::read_from_mov(instr) };
-        println!("PointLight memorypool: {:x}", point_light_memorypool);
-
-        // Now we try to find the SpotLightComponent
-        let mp = generate_aob_pattern![
-            0x32, 0xC2, 0x88, 0x87, 0xB4, 0x01, 0x00, 0x00, 0xEB, _, 0x48, 0x8B, 0x05
-        ];
-
-        let instr = region
-            .scan_aob(&mp)?
-            .context("Couldn't find SpotLightComponent Memory Pool")?
-            + 10;
-
-        let spot_light_memorypool = unsafe { Self::read_from_mov(instr) };
-        println!("SpotLight memorypool: {:x}", spot_light_memorypool);
-
-        Ok(MainMemoryPools {
-            spotlight: Pointer::new(spot_light_memorypool, Vec::new()),
-            pointlight: Pointer::new(point_light_memorypool, Vec::new()),
-        })
+        // WARNING: if in the future we have undefined behavior, it may be because of this, since
+        // we're not checking any byte we're reading. We're YOLO'ing.
+        let initial_pointer = unsafe { Self::read_from_mov(instr) };
+        return Ok(initial_pointer);
     }
 
     pub fn get_pos_rot(&self) -> Option<(Position, RotationMatrix)> {
