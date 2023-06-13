@@ -96,7 +96,7 @@ impl LitcherContext {
         // then add the instruction length itself because the offset is
         // calculated *after* the instruction is read.
         // Basically, (RIP + instr_length) + offset
-        let offset = *((addr + 0x3) as *const u32) as usize;
+        let offset = std::ptr::read_unaligned((addr + 0x3) as *const u32) as usize;
 
         // Finally, the *real* address would be
         //   instr + instruction_length + offset
