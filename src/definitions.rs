@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::pointer::*;
-use imgui::{Condition, Window};
+use imgui::Condition;
 use lazy_re::lazy_re;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 
@@ -119,13 +119,13 @@ impl LightContainer {
             return;
         }
 
-        Window::new(&self.id)
+        ui.window(&self.id)
             .size([350.0, 510.0], Condition::FirstUseEver)
             .opened(&mut self.open)
-            .build(ui, || {
-                let mut light = self.light.get_light_mut();
+            .build(|| {
+                let light = self.light.get_light_mut();
 
-                imgui::ColorPicker::new("color picker", &mut self.color).build(ui);
+                ui.color_picker4("color picker", &mut self.color);
                 light.light_settings.color = self.color.into();
 
                 let mut brightness = light.light_settings.brightness;
@@ -149,17 +149,11 @@ impl LightContainer {
                     })
                     .build(ui, &mut brightness);
 
-                imgui::Slider::new("Radius", f32::MIN, f32::MAX)
-                    .range(0.1, 180.0)
-                    .build(ui, &mut radius);
+                ui.slider("Radius", 0.1, 180., &mut radius);
 
-                imgui::Slider::new("Shadow blend", f32::MIN, f32::MAX)
-                    .range(0.0001, 1.0)
-                    .build(ui, &mut shadow_blend_factor);
+                ui.slider("Shadow blend", 0.0001, 1.0, &mut shadow_blend_factor);
 
-                imgui::Slider::new("Attenuation", f32::MIN, f32::MAX)
-                    .range(0.0001, 1.0)
-                    .build(ui, &mut attenuation);
+                ui.slider("Attenuation", 0.0001, 1.0, &mut attenuation);
 
                 const SHADOWS_OPTIONS: [&str; 3] = [
                     "0 - No shadows",
@@ -311,17 +305,11 @@ impl SpotLight {
         let mut outer_angle = self.outer_angle;
         let mut softness = self.softness;
 
-        imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
-            .range(0.1, outer_angle - 1.0)
-            .build(ui, &mut inner_angle);
+        ui.slider("Inner angle", 0.1, outer_angle - 1.0, &mut inner_angle);
 
-        imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
-            .range(0.1, 180.0)
-            .build(ui, &mut outer_angle);
+        ui.slider("Outer angle", 0.1, 180.0, &mut outer_angle);
 
-        imgui::Slider::new("Softness", f32::MIN, f32::MAX)
-            .range(0.1, 100.0)
-            .build(ui, &mut softness);
+        ui.slider("Softness", 0.1, 100.0, &mut softness);
 
         self.outer_angle = outer_angle;
         self.inner_angle = inner_angle;

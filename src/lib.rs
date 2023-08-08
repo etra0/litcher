@@ -2,7 +2,6 @@
 //! The render_proxy function is at [$process + 02a0f50]. It receives two arguments, the light
 //! pointer and the world. It's useful to hook into it to steal the world pointer.
 //! Offset of the CR4Player Memory Pool: [$process + 2d56848]
-#![feature(once_cell)]
 
 use std::panic::PanicInfo;
 
@@ -15,7 +14,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui::{Condition, Window};
+use imgui::Condition;
 
 mod definitions;
 mod pointer;
@@ -136,9 +135,9 @@ impl LitcherContext {
     }
 
     pub fn main_window(&mut self, ui: &mut imgui::Ui) {
-        Window::new(VERSION)
+        ui.window(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
-            .build(ui, || {
+            .build(|| {
                 if ui.button("Spawn new pointlight") {
                     if let (Some((pos, rot)), Some(world)) =
                         (self.get_pos_rot(), self.player.get_world())
@@ -196,9 +195,9 @@ impl LitcherContext {
                     ui.same_line();
                     ui.text(&light.id);
                     ui.same_line();
-                    imgui::ColorButton::new("Color of light ##", light.color)
+                    ui.color_button_config("Color of light ##", light.color)
                         .flags(ColorEditFlags::NO_INPUTS | ColorEditFlags::NO_LABEL)
-                        .build(ui);
+                        .build();
                     ui.same_line();
                     if ui.button("Edit") {
                         light.open = true;
@@ -243,7 +242,7 @@ impl LitcherContext {
 
 impl ImguiRenderLoop for LitcherContext {
     fn initialize(&mut self, ctx: &mut imgui::Context) {
-        let mut io = ctx.io_mut();
+        let io = ctx.io_mut();
         io.font_allow_user_scaling = true;
     }
     fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
@@ -315,7 +314,6 @@ impl ImguiRenderLoop for LitcherContext {
     }
 }
 
-use hudhook::log::*;
 use hudhook::reexports::*;
 use hudhook::*;
 
@@ -329,7 +327,6 @@ pub unsafe extern "stdcall" fn DllMain(
     if reason == DLL_PROCESS_ATTACH {
         hudhook::lifecycle::global_state::set_module(hmodule);
 
-        trace!("DllMain()");
         std::thread::spawn(move || {
             let hooks: Box<dyn hooks::Hooks> = { 
                 match detect_api() {
