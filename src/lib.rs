@@ -73,7 +73,7 @@ impl LitcherContext {
 
         let player: Pointer<ScriptedEntity<EmptyVT>> = {
             // This is being dragged from CR4Game > CCustomCamera > CR4Player.
-            Pointer::new(initial_table_ptr + 0x100, vec![0x1A8, 0x40])
+            Pointer::new(initial_table_ptr + 0xC8, vec![0x1A8, 0x40])
         };
 
         let lights = Vec::new();
@@ -113,14 +113,14 @@ impl LitcherContext {
         // mov/lea instruction that uses that offset and you might find the initial value to the
         // table a couple of bytes behind.
         let mp = generate_aob_pattern![
-            0x4C, 0x8D, 0xB7, 0x78, 0x00, 0x01, 0x00, 0x49, 0x8B, 0xCE
+            0x48, 0x8B, 0xC8, 0xE8, _, _, _, _, 0x48, 0x8B, 0x0D, _, _, _, _, 0xFF, 0x41, 0x14, 0x8B, 0x41, 0x14
         ];
 
-        // The right instruction is in 0x10 offset from what we find.
+        // The right instruction is in 0x08 offset from what we find.
         let instr = region
             .scan_aob(&mp)?
             .context("Couldn't find the PointLight Memory Pool")?
-            - 7;
+            + 8;
 
         // WARNING: if in the future we have undefined behavior, it may be because of this, since
         // we're not checking any byte we're reading. We're YOLO'ing.
