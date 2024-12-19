@@ -2,7 +2,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 
 pub enum RenderingAPI {
     Dx11,
-    Dx12
+    Dx12,
 }
 
 // This is beyond a good ortodox way of detecting this but we can safely rely on this for now.

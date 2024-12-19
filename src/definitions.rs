@@ -119,15 +119,14 @@ impl LightContainer {
             return;
         }
 
-        Window::new(&self.id)
+        ui.window(&self.id)
             .size([350.0, 510.0], Condition::FirstUseEver)
             .opened(&mut self.open)
-            .build(ui, || {
+            .build(|| {
                 let mut light = self.light.get_light_mut();
-
-                imgui::ColorPicker::new("color picker", &mut self.color).build(ui);
+                // TODO: Revisit this!
+                ui.color_picker4("color picker", &mut self.color);
                 light.light_settings.color = self.color.into();
-
                 let mut brightness = light.light_settings.brightness;
                 let mut radius = light.light_settings.radius;
                 let mut attenuation = light.light_settings.attenuation;
@@ -149,19 +148,19 @@ impl LightContainer {
                     })
                     .build(ui, &mut brightness);
 
-                imgui::Slider::new("Radius", f32::MIN, f32::MAX)
+                ui.slider_config("Radius", f32::MIN, f32::MAX)
                     .range(0.1, 180.0)
-                    .build(ui, &mut radius);
+                    .build(&mut radius);
 
-                imgui::Slider::new("Shadow blend", f32::MIN, f32::MAX)
+                ui.slider_config("Shadow blend", f32::MIN, f32::MAX)
                     .range(0.0001, 1.0)
-                    .build(ui, &mut shadow_blend_factor);
+                    .build(&mut shadow_blend_factor);
 
-                imgui::Slider::new("Attenuation", f32::MIN, f32::MAX)
+                ui.slider_config("Attenuation", f32::MIN, f32::MAX)
                     .range(0.0001, 1.0)
-                    .build(ui, &mut attenuation);
+                    .build(&mut attenuation);
 
-                const SHADOWS_OPTIONS: [&str; 3] = [
+                const SHADOWS_OPTIONS: [&'static str; 3] = [
                     "0 - No shadows",
                     "1 - Characters and objects",
                     "2 - Characters only",
@@ -311,17 +310,17 @@ impl SpotLight {
         let mut outer_angle = self.outer_angle;
         let mut softness = self.softness;
 
-        imgui::Slider::new("Inner angle", f32::MIN, f32::MAX)
+        ui.slider_config("Inner angle", f32::MIN, f32::MAX)
             .range(0.1, outer_angle - 1.0)
-            .build(ui, &mut inner_angle);
+            .build(&mut inner_angle);
 
-        imgui::Slider::new("Outer angle", f32::MIN, f32::MAX)
+        ui.slider_config("Outer angle", f32::MIN, f32::MAX)
             .range(0.1, 180.0)
-            .build(ui, &mut outer_angle);
+            .build(&mut outer_angle);
 
-        imgui::Slider::new("Softness", f32::MIN, f32::MAX)
+        ui.slider_config("Softness", f32::MIN, f32::MAX)
             .range(0.1, 100.0)
-            .build(ui, &mut softness);
+            .build(&mut softness);
 
         self.outer_angle = outer_angle;
         self.inner_angle = inner_angle;
@@ -329,7 +328,7 @@ impl SpotLight {
             self.inner_angle = self.outer_angle - 1.;
         }
         self.softness = softness;
-}
+    }
 
     pub fn update_render(&mut self, world: usize) {
         unsafe { (self.light.entity.vt.set_flags)(&mut self.light, world) };
@@ -412,8 +411,8 @@ impl LightTypeTrait for PointLight {}
 #[repr(C, packed)]
 struct MemoryPoolVT<T: LightTypeTrait + 'static> {
     // 25 * 0x8
-    #[lazy_re(offset = 200)] 
-    spawn_object: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T
+    #[lazy_re(offset = 200)]
+    spawn_object: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T,
 }
 
 /// Most object in the game are created through a MemoryPool<T>, where T corresponds the actual

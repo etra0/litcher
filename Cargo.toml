@@ -19,8 +19,8 @@ windows-sys = {version = "0.35", features = [
   "Win32_System_Console",
 ]}
 simple_injector = { git = "https://github.com/etra0/simple_injector" }
-hudhook = { path = "./vendor/hudhook/" }
-imgui = "0.8.2"
+hudhook = "0.8.0"
+imgui = "0.12"
 lazy-re = "0.1.1"
 anyhow = "1.0.65"
 

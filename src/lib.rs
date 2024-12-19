@@ -12,19 +12,25 @@ use memory_rs::generate_aob_pattern;
 use memory_rs::internal::process_info::ProcessInfo;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
-use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
-use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::dx12::ImguiDx12Hooks;
+use hudhook::ImguiRenderLoop;
 use imgui::{Condition, Window};
 
 mod definitions;
-mod pointer;
 mod detect_api;
+mod pointer;
 
 use definitions::*;
+use detect_api::*;
 use pointer::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxA;
-use detect_api::*;
+
+use hudhook::windows::Win32::Foundation::HINSTANCE;
+use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+
+// TODO: Check if this is useful
+use log::trace;
 
 struct LitcherContext {
     memory_pools: MainMemoryPools,
@@ -48,7 +54,14 @@ fn panic(info: &PanicInfo) {
         \0",
         info
     );
-    unsafe { MessageBoxA(0, msg.as_ptr(), format!("The Litcher {}\0", env!("CARGO_PKG_VERSION")).as_ptr(), 0) };
+    unsafe {
+        MessageBoxA(
+            0,
+            msg.as_ptr(),
+            format!("The Litcher {}\0", env!("CARGO_PKG_VERSION")).as_ptr(),
+            0,
+        )
+    };
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1000));
     }
@@ -60,7 +73,8 @@ impl LitcherContext {
         std::panic::set_hook(Box::new(panic));
 
         if cfg!(debug_assertions) {
-            hudhook::utils::alloc_console();
+            // TODO: add alloc console
+            // hudhook::utils::alloc_console();
         }
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
@@ -136,9 +150,9 @@ impl LitcherContext {
     }
 
     pub fn main_window(&mut self, ui: &mut imgui::Ui) {
-        Window::new(VERSION)
+        ui.window(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
-            .build(ui, || {
+            .build(|| {
                 if ui.button("Spawn new pointlight") {
                     if let (Some((pos, rot)), Some(world)) =
                         (self.get_pos_rot(), self.player.get_world())
@@ -196,9 +210,9 @@ impl LitcherContext {
                     ui.same_line();
                     ui.text(&light.id);
                     ui.same_line();
-                    imgui::ColorButton::new("Color of light ##", light.color)
+                    ui.color_button_config("Color of light ##", light.color)
                         .flags(ColorEditFlags::NO_INPUTS | ColorEditFlags::NO_LABEL)
-                        .build(ui);
+                        .build();
                     ui.same_line();
                     if ui.button("Edit") {
                         light.open = true;
@@ -236,17 +250,16 @@ impl LitcherContext {
                         self.player.updated();
                     }
                 }
-
             });
     }
 }
 
 impl ImguiRenderLoop for LitcherContext {
-    fn initialize(&mut self, ctx: &mut imgui::Context) {
-        let mut io = ctx.io_mut();
-        io.font_allow_user_scaling = true;
-    }
-    fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+    //     fn initialize(&mut self, ctx: &mut imgui::Context) {
+    //         let mut io = ctx.io_mut();
+    //         io.font_allow_user_scaling = true;
+    //     }
+    fn render(&mut self, ui: &mut imgui::Ui) {
         // Force a read every render to avoid crashes.
         let _world = self.player.get_world();
         if _world.is_none() {
@@ -262,18 +275,18 @@ impl ImguiRenderLoop for LitcherContext {
             self.lights.clear();
             self.player.updated();
         }
-
-        if flags.focused
-            && !ui.io().want_capture_keyboard
-            && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
-        {
-            self.show = !self.show;
-        }
-
-        if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
-            hudhook::utils::free_console();
-            hudhook::lifecycle::eject();
-        }
+        //
+        //         if flags.focused
+        //             && !ui.io().want_capture_keyboard
+        //             && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
+        //         {
+        //             self.show = !self.show;
+        //         }
+        //
+        //         if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
+        //             hudhook::utils::free_console();
+        //             hudhook::lifecycle::eject();
+        //         }
 
         self.lights.retain(|x: &LightContainer| {
             let ptr = match &x.light {
@@ -310,39 +323,34 @@ impl ImguiRenderLoop for LitcherContext {
         }
     }
 
-    fn should_block_messages(&self, _io: &imgui::Io) -> bool {
-        self.show
-    }
+    // fn should_block_messages(&self, _io: &imgui::Io) -> bool {
+    //     self.show
+    // }
 }
 
-use hudhook::log::*;
-use hudhook::reexports::*;
 use hudhook::*;
 
 /// Entry point created by the `hudhook` library.
 #[no_mangle]
-pub unsafe extern "stdcall" fn DllMain(
-    hmodule: HINSTANCE,
-    reason: u32,
-    _: *mut std::ffi::c_void,
-) {
+pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) {
     if reason == DLL_PROCESS_ATTACH {
-        hudhook::lifecycle::global_state::set_module(hmodule);
-
+        windows_sys::Win32::System::Console::AllocConsole();
         trace!("DllMain()");
-        std::thread::spawn(move || {
-            let hooks: Box<dyn hooks::Hooks> = { 
-                match detect_api() {
-                    RenderingAPI::Dx11 => {
-                        LitcherContext::new().into_hook::<ImguiDx11Hooks>()
-                    }
-                    RenderingAPI::Dx12 => {
-                        LitcherContext::new().into_hook::<ImguiDx12Hooks>()
-                    }
-                }
-            };
-            hooks.hook();
-            hudhook::lifecycle::global_state::set_hooks(hooks);
+        std::thread::spawn(move || match detect_api() {
+            RenderingAPI::Dx11 => {
+                Hudhook::builder()
+                    .with::<ImguiDx11Hooks>(LitcherContext::new())
+                    .with_hmodule(hmodule)
+                    .build()
+                    .apply()
+                    .unwrap();
+            }
+            RenderingAPI::Dx12 => Hudhook::builder()
+                .with::<ImguiDx12Hooks>(LitcherContext::new())
+                .with_hmodule(hmodule)
+                .build()
+                .apply()
+                .unwrap(),
         });
     }
 }
