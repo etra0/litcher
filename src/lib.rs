@@ -2,9 +2,7 @@
 //! The render_proxy function is at [$process + 02a0f50]. It receives two arguments, the light
 //! pointer and the world. It's useful to hook into it to steal the world pointer.
 //! Offset of the CR4Player Memory Pool: [$process + 2d56848]
-#![feature(once_cell)]
-
-use std::panic::PanicInfo;
+use std::panic::PanicHookInfo;
 
 use anyhow::{Context, Result};
 use imgui::ColorEditFlags;
@@ -15,7 +13,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::ImguiRenderLoop;
-use imgui::{Condition, Window};
+use imgui::Condition;
 
 mod definitions;
 mod detect_api;
@@ -42,7 +40,7 @@ struct LitcherContext {
 
 const VERSION: &str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
 
-fn panic(info: &PanicInfo) {
+fn panic(info: &PanicHookInfo) {
     let msg = format!(
         "Something went super wrong.\n\n\
         Please post the log created alongside witcher3.exe on a github issue in \
@@ -73,8 +71,7 @@ impl LitcherContext {
         std::panic::set_hook(Box::new(panic));
 
         if cfg!(debug_assertions) {
-            // TODO: add alloc console
-            // hudhook::utils::alloc_console();
+            let _ = hudhook::alloc_console();
         }
         // hudhook::utils::simplelog();
         let proc_info = ProcessInfo::new(None).unwrap();
@@ -255,10 +252,11 @@ impl LitcherContext {
 }
 
 impl ImguiRenderLoop for LitcherContext {
-    //     fn initialize(&mut self, ctx: &mut imgui::Context) {
-    //         let mut io = ctx.io_mut();
-    //         io.font_allow_user_scaling = true;
-    //     }
+    fn initialize<'a>(&'a mut self, ctx: &mut imgui::Context, _: &'a mut (dyn RenderContext + 'a)) {
+        let io = ctx.io_mut();
+        io.font_allow_user_scaling = true;
+    }
+
     fn render(&mut self, ui: &mut imgui::Ui) {
         // Force a read every render to avoid crashes.
         let _world = self.player.get_world();
@@ -275,18 +273,16 @@ impl ImguiRenderLoop for LitcherContext {
             self.lights.clear();
             self.player.updated();
         }
-        //
-        //         if flags.focused
-        //             && !ui.io().want_capture_keyboard
-        //             && ui.is_key_index_pressed_no_repeat(VK_F4 as _)
-        //         {
-        //             self.show = !self.show;
-        //         }
-        //
-        //         if cfg!(debug_assertions) && ui.is_key_index_pressed_no_repeat(VK_F6 as _) {
-        //             hudhook::utils::free_console();
-        //             hudhook::lifecycle::eject();
-        //         }
+
+        if !ui.io().want_capture_keyboard
+                && ui.is_key_pressed_no_repeat(imgui::Key::F4)
+        {
+            self.show = !self.show;
+        }
+
+        if cfg!(debug_assertions) && ui.is_key_pressed_no_repeat(imgui::Key::F6) {
+            hudhook::eject();
+        }
 
         self.lights.retain(|x: &LightContainer| {
             let ptr = match &x.light {
@@ -334,7 +330,6 @@ use hudhook::*;
 #[no_mangle]
 pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) {
     if reason == DLL_PROCESS_ATTACH {
-        windows_sys::Win32::System::Console::AllocConsole();
         trace!("DllMain()");
         std::thread::spawn(move || match detect_api() {
             RenderingAPI::Dx11 => {

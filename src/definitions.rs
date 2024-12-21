@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::pointer::*;
-use imgui::{Condition, Window};
+use imgui::Condition;
 use lazy_re::lazy_re;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
 
@@ -123,7 +123,7 @@ impl LightContainer {
             .size([350.0, 510.0], Condition::FirstUseEver)
             .opened(&mut self.open)
             .build(|| {
-                let mut light = self.light.get_light_mut();
+                let light = self.light.get_light_mut();
                 // TODO: Revisit this!
                 ui.color_picker4("color picker", &mut self.color);
                 light.light_settings.color = self.color.into();

@@ -19,10 +19,16 @@ windows-sys = {version = "0.35", features = [
   "Win32_System_Console",
 ]}
 simple_injector = { git = "https://github.com/etra0/simple_injector" }
+imgui = { git = "https://github.com/imgui-rs/imgui-rs", rev = "cb8beeb" }
 hudhook = "0.8.0"
-imgui = "0.12"
+
+
 lazy-re = "0.1.1"
 anyhow = "1.0.65"
+
+[replace]
+"imgui:0.12.0" = { git = "https://github.com/imgui-rs/imgui-rs", rev = "cb8beeb" }
+"imgui-sys:0.12.0" = { git = "https://github.com/imgui-rs/imgui-rs", rev = "cb8beeb" }
 
 [build-dependencies]
 embed-resource = "1.8"
