@@ -22,7 +22,7 @@ jobs:
       run: python release_tools.py check_tag
       
     - name: Install Rust nightly
-      run: rustup default nightly-2023-06-09
+      run: rustup default nightly-2024-12-18
       
     - name: Build
       run: cargo build --verbose --release
