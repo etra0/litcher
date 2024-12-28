@@ -432,8 +432,8 @@ pub struct MemoryPool<T: LightTypeTrait + 'static> {
 
 impl<T: LightTypeTrait> MemoryPool<T> {
     pub fn new_light(&mut self) -> &'static mut T {
-        let result = unsafe { (self.vt.spawn_object)(self as _) };
         self.clean_this = 0;
+        let result = unsafe { (self.vt.spawn_object)(self as _) };
         result
     }
 }
