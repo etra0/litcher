@@ -8,7 +8,6 @@ use anyhow::{Context, Result};
 use imgui::ColorEditFlags;
 use memory_rs::generate_aob_pattern;
 use memory_rs::internal::process_info::ProcessInfo;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
@@ -18,10 +17,12 @@ use imgui::Condition;
 mod definitions;
 mod detect_api;
 mod pointer;
+mod exposure;
 
 use definitions::*;
 use detect_api::*;
 use pointer::*;
+use exposure::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxA;
 
 use hudhook::windows::Win32::Foundation::HINSTANCE;
@@ -36,6 +37,7 @@ struct LitcherContext {
     show: bool,
     player: CR4Player,
     id_track: usize,
+    tonemapping: ToneMappingContainer
 }
 
 const VERSION: &str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
@@ -77,6 +79,7 @@ impl LitcherContext {
         let proc_info = ProcessInfo::new(None).unwrap();
 
         let initial_table_ptr = Self::find_initial_table_value(&proc_info).unwrap();
+        println!("Initial table: {:x}", initial_table_ptr);
         let memory_pools = MainMemoryPools {
             spotlight: Pointer::new(initial_table_ptr + 0x1990, Vec::new()),
             pointlight: Pointer::new(initial_table_ptr + 0x1998, Vec::new()),
@@ -89,12 +92,16 @@ impl LitcherContext {
 
         let lights = Vec::new();
 
+        let tonemapping = ToneMappingContainer::new(&proc_info);
+
         Self {
             memory_pools,
             lights,
             show: true,
             player: CR4Player::new(player),
             id_track: 0,
+            // test: Pointer::new(initial_table_ptr + 0x1F10, Vec::new())
+            tonemapping
         }
     }
 
@@ -150,6 +157,7 @@ impl LitcherContext {
         ui.window(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
             .build(|| {
+                self.tonemapping.handle_ui(ui);
                 if ui.button("Spawn new pointlight") {
                     if let (Some((pos, rot)), Some(world)) =
                         (self.get_pos_rot(), self.player.get_world())
@@ -238,6 +246,7 @@ impl LitcherContext {
                 }
 
                 ui.separator();
+
 
                 if ui.button("Delete all lights") {
                     if let Some(world) = self.player.get_world() {
