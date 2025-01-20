@@ -37,7 +37,37 @@ struct LitcherContext {
     show: bool,
     player: CR4Player,
     id_track: usize,
-    tonemapping: ToneMappingContainer
+    tonemapping: ToneMappingContainer,
+    cursor: WitcherCursor
+}
+
+struct WitcherCursor {
+    addr: usize
+}
+
+#[repr(C, packed)]
+struct MouseConfig {
+    is_enabled: u16,
+    should_update: u8
+}
+
+impl WitcherCursor {
+    pub fn enable_cursor(&self) {
+        unsafe {
+            let ptr = self.addr as *mut MouseConfig;
+            (*ptr).is_enabled = 0x0101;
+            (*ptr).should_update = 0x1;
+        }
+
+    }
+
+    pub fn disable_cursor(&self) {
+        unsafe {
+            let ptr = self.addr as *mut MouseConfig;
+            (*ptr).is_enabled = 0;
+            (*ptr).should_update = 0x1;
+        }
+    }
 }
 
 const VERSION: &str = concat!("The Litcher v", env!("CARGO_PKG_VERSION"), ", by @etra0");
@@ -94,18 +124,31 @@ impl LitcherContext {
 
         let tonemapping = ToneMappingContainer::new(&proc_info);
 
+        let cursor = {
+            let region = &proc_info.region;
+            let mp = generate_aob_pattern![
+                0x48, 0xFF, 0x42, 0x30, 0xC6, 0x05, _, _, _, _, 0x00, 0xC6, 0x05, _, _, _, _, 0x01, 0xC3
+            ];
+
+            let result = region.scan_aob(&mp).unwrap().context("Couldn't find cursor").unwrap() + 4;
+            // The original code is
+            // witcher3.exe+19881B4 - C6 05 657B8401 00     - mov byte ptr [witcher3.exe+31CFD20],00 { (0.00),0 }
+            let addr: usize = unsafe { Self::read_from_mov(result, 0x2) };
+            WitcherCursor { addr }
+        };
+
         Self {
             memory_pools,
             lights,
             show: true,
             player: CR4Player::new(player),
             id_track: 0,
-            // test: Pointer::new(initial_table_ptr + 0x1F10, Vec::new())
-            tonemapping
+            tonemapping,
+            cursor
         }
     }
 
-    unsafe fn read_from_mov(addr: usize) -> usize {
+    unsafe fn read_from_mov(addr: usize, offs: usize) -> usize {
         let instruction_length = 7_usize;
 
         // Basically, the `mov` instruction works with offsets, in this case,
@@ -114,7 +157,7 @@ impl LitcherContext {
         // then add the instruction length itself because the offset is
         // calculated *after* the instruction is read.
         // Basically, (RIP + instr_length) + offset
-        let offset = std::ptr::read_unaligned((addr + 0x3) as *const u32) as usize;
+        let offset = std::ptr::read_unaligned((addr + offs) as *const u32) as usize;
 
         // Finally, the *real* address would be
         //   instr + instruction_length + offset
@@ -142,7 +185,7 @@ impl LitcherContext {
 
         // WARNING: if in the future we have undefined behavior, it may be because of this, since
         // we're not checking any byte we're reading. We're YOLO'ing.
-        let initial_pointer = unsafe { Self::read_from_mov(instr) };
+        let initial_pointer = unsafe { Self::read_from_mov(instr, 0x3) };
         return Ok(initial_pointer);
     }
 
@@ -287,6 +330,7 @@ impl ImguiRenderLoop for LitcherContext {
                 && ui.is_key_pressed_no_repeat(imgui::Key::F4)
         {
             self.show = !self.show;
+            self.cursor.disable_cursor();
         }
 
         if cfg!(debug_assertions) && ui.is_key_pressed_no_repeat(imgui::Key::F6) {
@@ -304,11 +348,10 @@ impl ImguiRenderLoop for LitcherContext {
         if self.show {
             ui.set_mouse_cursor(Some(imgui::MouseCursor::Arrow));
             self.main_window(ui);
+            self.cursor.enable_cursor();
 
             self.lights.iter_mut().for_each(|lw| lw.render_window(ui));
-        } else {
-            ui.set_mouse_cursor(None);
-        }
+        } 
 
         if let (Some((pos, rot)), Some(world)) = (self.get_pos_rot(), self.player.get_world()) {
             for light_wrapper in self.lights.iter_mut() {
@@ -328,9 +371,6 @@ impl ImguiRenderLoop for LitcherContext {
         }
     }
 
-    // fn should_block_messages(&self, _io: &imgui::Io) -> bool {
-    //     self.show
-    // }
 }
 
 use hudhook::*;
