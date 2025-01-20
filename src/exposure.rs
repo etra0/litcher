@@ -38,9 +38,9 @@ impl ToneMappingContainer {
     }
 
     pub fn handle_ui(&mut self, ui: &imgui::Ui) {
-        ui.slider("Exposure", 0.0, 3.0, &mut self.value);
-        ui.same_line();
+        ui.slider_config("Exposure", 1e-6, 3.0).flags(imgui::SliderFlags::LOGARITHMIC).build(&mut self.value);
         ui.checkbox("Overwrite", &mut self.overwrite);
+        ui.separator();
 
         unsafe {
             overwrite_tonemapping_enable = self.overwrite as u8;
