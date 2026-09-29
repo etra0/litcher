@@ -37,7 +37,7 @@ struct LitcherContext {
     show: bool,
     player: CR4Player,
     id_track: usize,
-    tonemapping: ToneMappingContainer,
+    // tonemapping: ToneMappingContainer,
     cursor: WitcherCursor
 }
 
@@ -111,23 +111,23 @@ impl LitcherContext {
         let initial_table_ptr = Self::find_initial_table_value(&proc_info).unwrap();
         println!("Initial table: {:x}", initial_table_ptr);
         let memory_pools = MainMemoryPools {
-            spotlight: Pointer::new(initial_table_ptr + 0x1990, Vec::new()),
-            pointlight: Pointer::new(initial_table_ptr + 0x1998, Vec::new()),
+            spotlight: Pointer::new(initial_table_ptr + 0x2DA0, Vec::new()),
+            pointlight: Pointer::new(initial_table_ptr + 0x2D98, Vec::new()),
         };
 
         let player: Pointer<ScriptedEntity<EmptyVT>> = {
             // This is being dragged from CR4Game > CCustomCamera > CR4Player.
-            Pointer::new(initial_table_ptr + 0xC8, vec![0x1A8, 0x40])
+            Pointer::new(initial_table_ptr + 0x10, vec![0x1B0, 0x40])
         };
 
         let lights = Vec::new();
 
-        let tonemapping = ToneMappingContainer::new(&proc_info);
+        // let tonemapping = ToneMappingContainer::new(&proc_info);
 
         let cursor = {
             let region = &proc_info.region;
             let mp = generate_aob_pattern![
-                0x48, 0xFF, 0x42, 0x30, 0xC6, 0x05, _, _, _, _, 0x00, 0xC6, 0x05, _, _, _, _, 0x01, 0xC3
+                0x48, 0xff, 0x42, 0x30, 0xc6, 0x05, _, _, _, _, 0x00, 0xc6, 0x05, _, _, _, _, 0x01
             ];
 
             let result = region.scan_aob(&mp).unwrap().context("Couldn't find cursor").unwrap() + 4;
@@ -143,7 +143,7 @@ impl LitcherContext {
             show: true,
             player: CR4Player::new(player),
             id_track: 0,
-            tonemapping,
+      //       tonemapping,
             cursor
         }
     }
@@ -173,15 +173,16 @@ impl LitcherContext {
         // There's an useful offset you can look for which looks rather unique: 0x10078. Find a
         // mov/lea instruction that uses that offset and you might find the initial value to the
         // table a couple of bytes behind.
+        // From etra of the future: It is also useful to just search for MemoryPool instance, then
+        // scan that value so you get a table with the memorypools!
         let mp = generate_aob_pattern![
-            0x48, 0x8B, 0xC8, 0xE8, _, _, _, _, 0x48, 0x8B, 0x0D, _, _, _, _, 0xFF, 0x41, 0x14, 0x8B, 0x41, 0x14
+            0x48, 0x8B, 0x05, _, _, _, _, 0x48, 0x89, 0x45, 0xEF, 0x48, 0x8D, 0x45, 0x9F
         ];
 
         // The right instruction is in 0x08 offset from what we find.
         let instr = region
             .scan_aob(&mp)?
-            .context("Couldn't find the PointLight Memory Pool")?
-            + 8;
+            .context("Couldn't find the PointLight Memory Pool")?;
 
         // WARNING: if in the future we have undefined behavior, it may be because of this, since
         // we're not checking any byte we're reading. We're YOLO'ing.
@@ -200,7 +201,7 @@ impl LitcherContext {
         ui.window(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
             .build(|| {
-                self.tonemapping.handle_ui(ui);
+                // self.tonemapping.handle_ui(ui);
                 if ui.button("Spawn new pointlight") {
                     if let (Some((pos, rot)), Some(world)) =
                         (self.get_pos_rot(), self.player.get_world())
@@ -250,10 +251,10 @@ impl LitcherContext {
                 };
 
                 let mut light_to_remove = None;
-                self.lights.iter_mut().enumerate().for_each(|(i, light)| {
+                self.lights.iter_mut().enumerate().for_each(|(_, light)| {
                     let id = ui.push_id(&light.id);
                     if ui.button("X") {
-                        light_to_remove = Some(i);
+                        light_to_remove = Some(light.id.clone());
                     }
                     ui.same_line();
                     ui.text(&light.id);
@@ -268,20 +269,25 @@ impl LitcherContext {
                     ui.same_line();
 
                     let inner_light = light.light.get_light_mut();
-                    if ui.checkbox("on/off", &mut inner_light.is_enabled) {
+                    if ui.checkbox("on/off ##", &mut inner_light.is_enabled) {
                         light.update_render(world);
                     }
 
                     ui.same_line();
-                    ui.checkbox("Attach to camera", &mut light.attach_camera);
+                    ui.checkbox("Attach to camera ##", &mut light.attach_camera);
 
                     id.end();
                 });
 
                 if let Some(ix) = light_to_remove {
                     println!("Light to remove: {}", ix);
-                    let light = self.lights.remove(ix);
-                    light.remove_light(world);
+
+                    let light_ix = self.lights.binary_search_by(|probe| probe.id.cmp(&ix));
+                    if let Ok(m) = light_ix {
+                        let l = self.lights.remove(m);
+                        l.remove_light(world);
+                        println!("Removed light {}", &ix);
+                    };
                 }
 
                 if self.lights.len() == 0 {

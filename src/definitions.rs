@@ -251,10 +251,10 @@ pub struct LightEntity {
     #[lazy_re(offset = 0x130)]
     pub light_settings: LightSettings,
 
-    #[lazy_re(offset = 0x164)]
+    #[lazy_re(offset = 0x178)]
     pub is_enabled: bool,
 
-    #[lazy_re(offset = 0x16C)]
+    #[lazy_re(offset = 0x180)]
     pub shadow_blend_factor: f32,
     pub shadow_casting_mode: u32,
     pub shadow_fade_distance: f32,
@@ -266,7 +266,7 @@ pub struct LightEntity {
 pub struct SpotLight {
     pub light: LightEntity,
 
-    #[lazy_re(offset = 0x180)]
+    #[lazy_re(offset = 0x190)]
     pub inner_angle: f32,
     pub outer_angle: f32,
     pub softness: f32,
@@ -340,7 +340,7 @@ impl SpotLight {
 pub struct PointLight {
     pub light: LightEntity,
 
-    #[lazy_re(offset = 0x180)]
+    #[lazy_re(offset = 0x190)]
     pub cache_static_shadows: u8,
     pub dynamic_shadow_face_mask: u8,
 }
@@ -410,8 +410,8 @@ impl LightTypeTrait for PointLight {}
 #[lazy_re]
 #[repr(C, packed)]
 struct MemoryPoolVT<T: LightTypeTrait + 'static> {
-    // 25 * 0x8
-    #[lazy_re(offset = 200)]
+    // 29 * 0x8
+    #[lazy_re(offset = 232)]
     spawn_object: unsafe extern "C" fn(*mut MemoryPool<T>) -> &'static mut T,
 }
 
