@@ -37,7 +37,7 @@ struct LitcherContext {
     show: bool,
     player: CR4Player,
     id_track: usize,
-    // tonemapping: ToneMappingContainer,
+    tonemapping: ToneMappingContainer,
     cursor: WitcherCursor
 }
 
@@ -122,7 +122,7 @@ impl LitcherContext {
 
         let lights = Vec::new();
 
-        // let tonemapping = ToneMappingContainer::new(&proc_info);
+        let tonemapping = ToneMappingContainer::new(&proc_info);
 
         let cursor = {
             let region = &proc_info.region;
@@ -143,7 +143,7 @@ impl LitcherContext {
             show: true,
             player: CR4Player::new(player),
             id_track: 0,
-      //       tonemapping,
+            tonemapping,
             cursor
         }
     }
@@ -201,7 +201,7 @@ impl LitcherContext {
         ui.window(VERSION)
             .size([410.0, 200.0], Condition::FirstUseEver)
             .build(|| {
-                // self.tonemapping.handle_ui(ui);
+                self.tonemapping.handle_ui(ui);
                 if ui.button("Spawn new pointlight") {
                     if let (Some((pos, rot)), Some(world)) =
                         (self.get_pos_rot(), self.player.get_world())

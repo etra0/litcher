@@ -21,12 +21,14 @@ pub struct ToneMappingContainer {
 
 impl ToneMappingContainer {
     pub fn new(proc_info: &ProcessInfo) -> Self {
-        let mp = generate_aob_pattern![0x48, 0x85, 0xD2, 0x74, 0x10, 0x4C, 0x39, 0x72, 0x08, 0x74, 0x0A, 0x48, 0x8B, 0x52, 0x08];
+        let mp = generate_aob_pattern![
+            0x49, 0x8B, 0x86, 0x20, 0x02, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x0D, 0x48, 0x8B, 0x48, 0x08, 0x48, 0x8D, 0x51, 0x70, 0x48, 0x85, 0xC9
+        ];
 
-        let addr = proc_info.region.scan_aob(&mp).unwrap().unwrap();
+        let addr = proc_info.region.scan_aob(&mp).unwrap().unwrap() + 0x7;
 
         let mut detour = unsafe {
-            Detour::new(addr, 32, &raw const overwrite_tonemapping as usize, Some(&mut overwrite_tonemapping_jmb))
+            Detour::new(addr, 28, &raw const overwrite_tonemapping as usize, Some(&mut overwrite_tonemapping_jmb))
         };
 
         detour.inject();
