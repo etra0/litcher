@@ -111,8 +111,8 @@ impl LitcherContext {
         let initial_table_ptr = Self::find_initial_table_value(&proc_info).unwrap();
         println!("Initial table: {:x}", initial_table_ptr);
         let memory_pools = MainMemoryPools {
-            spotlight: Pointer::new(initial_table_ptr + 0x2DA0, Vec::new()),
-            pointlight: Pointer::new(initial_table_ptr + 0x2D98, Vec::new()),
+            spotlight: Pointer::new(initial_table_ptr + 0x2D98, Vec::new()),
+            pointlight: Pointer::new(initial_table_ptr + 0x2D90, Vec::new()),
         };
 
         let player: Pointer<ScriptedEntity<EmptyVT>> = {
